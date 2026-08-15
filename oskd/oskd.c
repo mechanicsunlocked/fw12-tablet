@@ -109,6 +109,43 @@ static void on_im_changed(const char *name, void *user)
     log_info("input method: %s", name);
 }
 
+/* Print what each key would show at every shift level. Runs standalone -- no
+ * fcitx5, no focused text field -- so a layout can be checked in isolation.
+ * This is also the data the on-screen keyboard will render. */
+static void dump_legends(vkbd *v)
+{
+    static const struct {
+        uint32_t code;
+        const char *name;
+    } keys[] = {
+        { KEY_Q, "Q" },           { KEY_W, "W" },
+        { KEY_E, "E" },           { KEY_Y, "Y" },
+        { KEY_Z, "Z" },           { KEY_A, "A" },
+        { KEY_S, "S" },           { KEY_LEFTBRACE, "LEFTBRACE" },
+        { KEY_SEMICOLON, "SEMICOLON" }, { KEY_APOSTROPHE, "APOSTROPHE" },
+        { KEY_MINUS, "MINUS" },   { KEY_EQUAL, "EQUAL" },
+        { KEY_SLASH, "SLASH" },   { KEY_102ND, "102ND" },
+        { KEY_2, "2" },           { KEY_GRAVE, "GRAVE" },
+    };
+    size_t i;
+
+    printf("%-12s  %-6s %-6s %-6s %-6s\n", "key", "base", "shift", "altgr",
+           "sh+agr");
+    printf("%-12s  %-6s %-6s %-6s %-6s\n", "---", "----", "-----", "-----",
+           "------");
+    for (i = 0; i < sizeof keys / sizeof keys[0]; i++) {
+        char l[4][16];
+        int lv;
+
+        for (lv = 0; lv < 4; lv++)
+            vkbd_key_label(v, keys[i].code, lv, l[lv], sizeof l[lv]);
+        printf("%-12s  %-6s %-6s %-6s %-6s\n", keys[i].name,
+               l[0][0] ? l[0] : "-", l[1][0] ? l[1] : "-",
+               l[2][0] ? l[2] : "-", l[3][0] ? l[3] : "-");
+    }
+    printf("\nbody: %s\n", vkbd_is_iso(v) ? "ISO (has KEY_102ND)" : "ANSI");
+}
+
 int main(int argc, char **argv)
 {
     app a = {0};
@@ -153,6 +190,36 @@ int main(int argc, char **argv)
     if (!a.kbd) {
         close(sig_fd);
         return 1;
+    }
+
+    /* --type 35,30,28 : press/release the given evdev keycodes in order.
+     * A generic injector, so a target app can be tested without inventing a
+     * new self-test for each one. */
+    if (argc > 2 && !strcmp(argv[1], "--type")) {
+        char *s = argv[2];
+        char *tok;
+
+        sleep(1); /* let whatever we are typing into settle */
+        for (tok = strtok(s, ","); tok; tok = strtok(NULL, ",")) {
+            uint32_t code = (uint32_t)atoi(tok);
+            if (!code)
+                continue;
+            log_info("  key %u", code);
+            tap(a.kbd, 0, code);
+            usleep(120 * 1000);
+        }
+        vkbd_flush(a.kbd);
+        usleep(300 * 1000);
+        vkbd_close(a.kbd);
+        close(sig_fd);
+        return 0;
+    }
+
+    if (argc > 1 && !strcmp(argv[1], "--dump")) {
+        dump_legends(a.kbd);
+        vkbd_close(a.kbd);
+        close(sig_fd);
+        return 0;
     }
 
     f = fcitx_open(&cb);

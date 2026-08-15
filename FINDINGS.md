@@ -696,6 +696,54 @@ millisecond timestamp is used regardless, being both more correct and free.
 An initial `modifiers(0,0,0,0)` is also sent after the keymap so the compositor
 starts from a known state.
 
+### 3.1f Ghostty works -- the brief's expected limitation does not apply
+
+The brief flags Ghostty as the known weak spot, to be reported plainly if it
+never activates the input method. Measured, it does both halves:
+
+**Auto-show fires.** With Ghostty focused (`com.mitchellh.ghostty`), fcitx5
+calls `NotifyIMActivated` and `ShowVirtualKeyboard` exactly as it does for GTK.
+
+**Injected keys arrive.** Typing `KEY_H KEY_A KEY_S KEY_ENTER` into a Ghostty
+running `read -r line` captured `has`.
+
+That makes sense in hindsight: virtual-keyboard-v1 events go through the
+compositor and reach the focused surface as ordinary keyboard input, so an
+application cannot really opt out of them the way it can opt out of
+text-input-v3.
+
+**A false negative worth recording.** A first attempt captured 0 bytes and
+looked like a real Ghostty limitation. The fault was the test harness --
+`stty raw -echo` plus `dd`/`cat` inside `ghostty -e` -- not Ghostty. Re-testing
+through an ordinary shell `read` showed the keys arriving normally. The control
+that caught it was checking that the same injection still reached the GTK
+target in the same run.
+
+### 3.1g Layout: `us(intl)` verified, but only read at startup
+
+`--dump` prints every key at all four shift levels. Switching Hyprland to
+`us(intl)` and re-running required no code change:
+
+```
+        base   shift  altgr  sh+agr
+E       e      E      é      É
+Q       q      Q      ä      Ä
+Y       y      Y      ü      Ü
+A       a      A      á      Á
+APOSTR  ´      ¨      '      "        <- dead acute / dead diaeresis
+```
+
+So the user's planned move to `us(intl)` gives the whole Luxembourg accent set
+through AltGr plus two dead keys, with no custom layout and no `lb` needed.
+Under `de` the same dump is correct QWERTZ with `ü ö ä ß`, AltGr `€`, and ISO
+`< > |`.
+
+**Remaining gap:** the layout is read from Hyprland once, at daemon startup. A
+layout change while the daemon is running is not picked up. The brief requires
+it to follow the system live, so the daemon still needs to subscribe to
+Hyprland's `socket2` and react to `activelayout>>`, then recompile the keymap
+and re-upload it.
+
 ### 3.2 What this means for the architecture
 
 This replaces the brief's "fw12d becomes the seat's input-method client" design
