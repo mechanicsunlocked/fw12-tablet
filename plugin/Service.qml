@@ -134,11 +134,17 @@ Item {
   // socket is already in a failed state is a no-op, so the shell gave up after
   // one ServerNotFoundError. Clearing `path` tears the socket down so the next
   // assignment builds a fresh one.
+  // Deliberately ungated. Driving `running` off `!sock.connected` looked
+  // right and silently stopped retrying: after the daemon restarted the shell
+  // logged PeerClosedError, then ServerNotFoundError, then nothing. A 2 s
+  // no-op tick costs nothing and does not depend on `connected` meaning
+  // exactly what we assume.
   Timer {
     interval: 2000
-    running: !sock.connected
+    running: true
     repeat: true
     onTriggered: {
+      if (sock.connected) return
       sock.connected = false
       sock.path = ""
       sock.path = root.socketPath
