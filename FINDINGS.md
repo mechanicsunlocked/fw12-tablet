@@ -606,6 +606,61 @@ Two practical notes for the implementation:
   plain Latin layout. They matter only for composing input methods, so a first
   release can accept and ignore them, but it must still **reply** to them.
 
+### 3.1c Injection: fcitx5 cannot type uppercase on Wayland
+
+Four rounds of measurement against a GTK4 entry that logs what it receives
+(`tools/typetarget.c`, so the result is machine-read rather than eyeballed).
+`ProcessKeyEvent(keysym, keycode, states, isRelease, time)`:
+
+| sent | appeared | conclusion |
+|---|---|---|
+| keysym `z` + keycode of `a` | `a` | **keycode wins, keysym ignored** |
+| keysym `A` + keycode `a` + states=shift | `a` | **states mask ignored** |
+| Shift_L held as real key events across `a` | `a` | **held modifier ignored** |
+| CapsLock toggled, then `a` | `a` | **CapsLock ignored** |
+| KEY_SEMICOLON / KEY_Y / KEY_Z | `ö` `z` `y` | **applies the system layout (de), not fcitx5's own `keyboard-us`** |
+| keysym `ä` alone, keycode 0 | `ä` | keysym-only works for some characters |
+| keysym `€` alone | `€` | likewise |
+| keysym `A`, `Q`, `Ä` alone | nothing | **no uppercase, accented or not** |
+
+So through fcitx5 we can type lowercase and a few special characters, and
+**cannot type a single capital letter**.
+
+This is a known upstream limitation, not a mistake in our usage:
+[fcitx5-osk](https://github.com/fortime/fcitx5-osk) documents that *"Fcitx5
+doesn't forward modifier events correctly on Wayland, which prevents uppercase
+letters from being input"*, and works around it with a separate evdev keyboard
+purely for modifiers.
+
+One good result survives: fcitx5 derives characters from the **system** layout,
+so layout-following is free and needs no work from us.
+
+### 3.1d Revised injection design: use each mechanism for what it does well
+
+| concern | mechanism | why |
+|---|---|---|
+| auto-show / auto-hide | fcitx5 DBus `ShowVirtualKeyboard` / `HideVirtualKeyboard` | protocol truth, already proven working |
+| layout / IM name | fcitx5 `NotifyIMActivated` | already delivered |
+| **key injection** | **`zwp_virtual_keyboard_v1`** | full modifier support, and already proven on this exact hardware |
+
+`zwp_virtual_keyboard_v1` is advertised by Hyprland (§3) and is what fw12tab's
+`oskbd.c` already uses: it uploads the system xkb keymap with
+`zwp_virtual_keyboard_v1.keymap` and then sends evdev keycodes plus an explicit
+modifier mask via `zwp_virtual_keyboard_v1.modifiers`. Shift, AltGr, dead keys
+and compose all work because the **compositor** resolves them, and fcitx5 --
+still the input method on the seat -- continues to see the resulting keys, so
+`~/.XCompose` keeps working.
+
+Unlike input-method-v2, the protocol permits **multiple** virtual keyboards per
+seat, so ours coexists with the `hl-virtual-keyboard-fcitx5` fcitx5 already
+creates. fw12tab ran exactly this arrangement.
+
+**Cost of the correction:** the claim in ARCHITECTURE.md that this design needs
+no Wayland protocol client is now wrong. The keyboard daemon needs a small
+`wayland-client` + `libxkbcommon` component after all. That is still far less
+than the original brief's design, which additionally wanted input-method-v2
+ownership, and ~200 lines of it already exist and are proven in fw12tab.
+
 ### 3.2 What this means for the architecture
 
 This replaces the brief's "fw12d becomes the seat's input-method client" design
