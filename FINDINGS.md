@@ -550,6 +550,62 @@ that to drive show/hide and candidate updates. That object is *not* on
 `org.fcitx.Fcitx5` — confirmed by introspection failing there in every state —
 because it belongs to the client, which is us.
 
+### 3.1a The client-side contract, captured empirically
+
+Method *names* are visible in `libvirtualkeyboard.so`, but their **signatures
+are not**, and a guessed signature fails silently. So `tools/vkspy.c` owns the
+bus name, installs an sd-bus message filter that logs every incoming call with
+its member and signature, and replies generically. Captured live while focusing
+and unfocusing text fields:
+
+**fcitx5 → us**, on `/org/fcitx/virtualkeyboard/impanel`, interface
+`org.fcitx.Fcitx5.VirtualKeyboard1`:
+
+| method | signature | meaning |
+|---|---|---|
+| `ShowVirtualKeyboard` | — | show the keyboard |
+| `HideVirtualKeyboard` | — | hide it |
+| `NotifyIMActivated` | `s` | input method name, e.g. `"keyboard-us"` |
+| `NotifyIMDeactivated` | `s` | same |
+| `UpdatePreeditArea` | `s` | preedit text |
+| `UpdatePreeditCaret` | `i` | caret index; `-1` = none |
+| `UpdateCandidateArea` | `asbbii` | candidates, hasPrev, hasNext, page, cursor |
+| `NotifyIMListChanged` | — | present in the `.so`, not observed |
+
+**us → fcitx5**, on `/virtualkeyboard`:
+
+| interface | method | signature |
+|---|---|---|
+| `org.fcitx.Fcitx5.VirtualKeyboardBackend1` | `ProcessKeyEvent` | `uuubu` |
+| | `ProcessVisibilityEvent` | `b` |
+| | `SelectCandidate` | `i` |
+| | `NextPage` / `PrevPage` | — |
+| | `SetVirtualKeyboardFunctionMode` | `u` |
+| `org.fcitx.Fcitx.VirtualKeyboard1` | `Show`/`Hide`/`ToggleVirtualKeyboard` | — |
+
+### 3.1b Auto-show is confirmed working
+
+The observed pattern on focusing a text field is:
+
+```
+NotifyIMActivated("keyboard-us")   ->  ShowVirtualKeyboard()
+NotifyIMDeactivated("keyboard-us") ->  HideVirtualKeyboard()
+```
+
+**This is the auto-show/hide source the brief asked for, and it is protocol
+truth rather than a focus heuristic.** No window-class matching, no polling, no
+guessing.
+
+Two practical notes for the implementation:
+
+- **Show/hide churns rapidly.** The capture shows many
+  activate/show/deactivate/hide cycles as focus moves between windows and
+  fields. The UI must tolerate this without flicker — debounce the hide, or
+  animate in a way that survives a hide immediately followed by a show.
+- `UpdatePreeditArea`/`UpdatePreeditCaret` arrive with empty/`-1` values for a
+  plain Latin layout. They matter only for composing input methods, so a first
+  release can accept and ignore them, but it must still **reply** to them.
+
 ### 3.2 What this means for the architecture
 
 This replaces the brief's "fw12d becomes the seat's input-method client" design
