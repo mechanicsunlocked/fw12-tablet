@@ -11,3 +11,6 @@ tools/snap-*.txt
 oskd/fw12-oskd
 oskd/*.o
 tools/vkspy
+oskd/virtual-keyboard-unstable-v1-*
+tools/typetarget
+tools/vktype

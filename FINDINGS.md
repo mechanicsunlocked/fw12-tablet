@@ -661,6 +661,41 @@ no Wayland protocol client is now wrong. The keyboard daemon needs a small
 than the original brief's design, which additionally wanted input-method-v2
 ownership, and ~200 lines of it already exist and are proven in fw12tab.
 
+### 3.1e Injection over virtual-keyboard-v1 works, with one silent trap
+
+The revised design types correctly. Self-test on a `de` layout, read back from
+a GTK4 entry rather than eyeballed:
+
+```
+sent:      Shift+KEY_H   KEY_A   KEY_SEMICOLON   AltGr+KEY_E
+received:  H             a       ö               €
+hex: 48 61 c3 b6 e2 82 ac
+```
+
+All four are things fcitx5's `ProcessKeyEvent` could not produce, uppercase
+most of all. The keymap also drives the legends, and they agreed: `KEY_H`
+shift level reported `H`, `KEY_SEMICOLON` base `ö`, `KEY_E` AltGr `€`. Since
+labels and keystrokes come from the same compiled keymap, they cannot drift.
+
+Hyprland registers the keyboard as `hl-virtual-keyboard-fw12-oskd`, layout
+`de`, alongside the physical keyboard.
+
+**The trap: `wl_display_flush` after the keymap upload is not enough.** With
+only a flush, everything appears to work -- the keyboard is created, the
+compositor lists it with the right layout, every request returns success -- and
+**not one keystroke arrives**. There is no error on any side.
+
+`wl_display_roundtrip` after `zwp_virtual_keyboard_v1.keymap` fixes it: the
+compositor has to have processed the keymap before it will accept keys.
+
+Isolated by reverting each change separately: with the round-trip in place a
+naive incrementing counter for the event `time` works fine, so **the
+round-trip was the fix and the timestamp was not**. A real monotonic
+millisecond timestamp is used regardless, being both more correct and free.
+
+An initial `modifiers(0,0,0,0)` is also sent after the keymap so the compositor
+starts from a known state.
+
 ### 3.2 What this means for the architecture
 
 This replaces the brief's "fw12d becomes the seat's input-method client" design
