@@ -1,0 +1,10 @@
+# build output
+daemon/fw12d
+daemon/*.o
+tools/vkprobe
+tools/swstate
+tools/qsvktest/
+
+# Phase 0 capture logs (raw measurements; findings are in FINDINGS.md)
+tools/*.log
+tools/snap-*.txt
