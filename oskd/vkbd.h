@@ -43,6 +43,13 @@ typedef struct vkbd vkbd;
 vkbd *vkbd_open(const char *layout, const char *variant, const char *options);
 void vkbd_close(vkbd *v);
 
+/* Recompile and re-upload the keymap after the system layout changed.
+ * Returns 1 if the keymap actually changed, 0 if it was already current
+ * (so callers can avoid pointless legend refreshes), -1 on failure -- in
+ * which case the previous keymap is kept rather than leaving none. */
+int vkbd_set_layout(vkbd *v, const char *layout, const char *variant,
+                    const char *options);
+
 /* Wayland fd, for the caller's poll() loop. */
 int vkbd_fd(vkbd *v);
 /* Prepare/read/dispatch. Returns -1 if the connection died. */

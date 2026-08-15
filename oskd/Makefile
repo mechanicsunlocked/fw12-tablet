@@ -18,7 +18,7 @@ LIBS     = $(shell pkg-config --libs $(PKGS))
 GEN_H = virtual-keyboard-unstable-v1-client-protocol.h
 GEN_C = virtual-keyboard-unstable-v1-protocol.c
 
-OBJ = oskd.o fcitx.o vkbd.o hypr.o $(GEN_C:.c=.o)
+OBJ = oskd.o fcitx.o vkbd.o hypr.o hyprevt.o $(GEN_C:.c=.o)
 
 all: fw12-oskd
 
@@ -31,10 +31,11 @@ $(GEN_C): $(PROTO)/virtual-keyboard-unstable-v1.xml
 fw12-oskd: $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LIBS)
 
-oskd.o:  oskd.c  fcitx.h vkbd.h hypr.h log.h $(GEN_H)
+oskd.o:  oskd.c  fcitx.h vkbd.h hypr.h hyprevt.h log.h $(GEN_H)
 fcitx.o: fcitx.c fcitx.h log.h
 vkbd.o:  vkbd.c  vkbd.h  log.h $(GEN_H)
 hypr.o:  hypr.c  hypr.h  log.h
+hyprevt.o: hyprevt.c hyprevt.h log.h
 
 install: fw12-oskd
 	install -Dm755 fw12-oskd $(DESTDIR)$(BINDIR)/fw12-oskd

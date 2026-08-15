@@ -19,7 +19,26 @@ struct vkbd {
     struct zwp_virtual_keyboard_v1 *kbd;
     struct xkb_context *ctx;
     struct xkb_keymap *keymap;
+    char layout[64];
+    char variant[64];
+    char options[128];
 };
+
+/* Compile a keymap from rule names, or NULL if the names are not valid. */
+static struct xkb_keymap *compile_keymap(struct xkb_context *ctx,
+                                         const char *layout,
+                                         const char *variant,
+                                         const char *options)
+{
+    struct xkb_rule_names names;
+
+    memset(&names, 0, sizeof names);
+    names.layout = (layout && *layout) ? layout : NULL;
+    names.variant = (variant && *variant) ? variant : NULL;
+    names.options = (options && *options) ? options : NULL;
+
+    return xkb_keymap_new_from_names(ctx, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+}
 
 static void reg_global(void *data, struct wl_registry *r, uint32_t name,
                        const char *iface, uint32_t ver)
@@ -108,7 +127,6 @@ static uint32_t now_ms(void)
 vkbd *vkbd_open(const char *layout, const char *variant, const char *options)
 {
     vkbd *v = calloc(1, sizeof *v);
-    struct xkb_rule_names names;
 
     if (!v)
         return NULL;
@@ -145,13 +163,7 @@ vkbd *vkbd_open(const char *layout, const char *variant, const char *options)
         return NULL;
     }
 
-    memset(&names, 0, sizeof names);
-    names.layout = (layout && *layout) ? layout : NULL;
-    names.variant = (variant && *variant) ? variant : NULL;
-    names.options = (options && *options) ? options : NULL;
-
-    v->keymap = xkb_keymap_new_from_names(v->ctx, &names,
-                                          XKB_KEYMAP_COMPILE_NO_FLAGS);
+    v->keymap = compile_keymap(v->ctx, layout, variant, options);
     if (!v->keymap) {
         log_err("could not compile keymap for layout '%s' variant '%s'",
                 layout ? layout : "(default)", variant ? variant : "");
@@ -163,6 +175,9 @@ vkbd *vkbd_open(const char *layout, const char *variant, const char *options)
         vkbd_close(v);
         return NULL;
     }
+    snprintf(v->layout, sizeof v->layout, "%s", layout ? layout : "");
+    snprintf(v->variant, sizeof v->variant, "%s", variant ? variant : "");
+    snprintf(v->options, sizeof v->options, "%s", options ? options : "");
 
     log_info("virtual keyboard ready (layout '%s'%s%s, %s body)",
              layout && *layout ? layout : "default",
@@ -196,6 +211,46 @@ void vkbd_close(vkbd *v)
     if (v->dpy)
         wl_display_disconnect(v->dpy);
     free(v);
+}
+
+int vkbd_set_layout(vkbd *v, const char *layout, const char *variant,
+                    const char *options)
+{
+    struct xkb_keymap *next;
+
+    layout = layout ? layout : "";
+    variant = variant ? variant : "";
+    options = options ? options : "";
+
+    if (!strcmp(layout, v->layout) && !strcmp(variant, v->variant) &&
+        !strcmp(options, v->options))
+        return 0; /* unchanged */
+
+    next = compile_keymap(v->ctx, layout, variant, options);
+    if (!next) {
+        /* Keep the working keymap rather than ending up with none: a bad
+         * layout string should degrade to "stale legends", not "cannot type". */
+        log_warn("layout '%s' variant '%s' did not compile; keeping '%s'",
+                 layout, variant, v->layout);
+        return -1;
+    }
+
+    xkb_keymap_unref(v->keymap);
+    v->keymap = next;
+
+    if (upload_keymap(v) < 0) {
+        log_err("could not upload the new keymap");
+        return -1;
+    }
+
+    snprintf(v->layout, sizeof v->layout, "%s", layout);
+    snprintf(v->variant, sizeof v->variant, "%s", variant);
+    snprintf(v->options, sizeof v->options, "%s", options);
+
+    log_info("layout changed to '%s'%s%s (%s body)", layout,
+             *variant ? " variant " : "", variant,
+             vkbd_is_iso(v) ? "ISO" : "ANSI");
+    return 1;
 }
 
 int vkbd_fd(vkbd *v) { return wl_display_get_fd(v->dpy); }

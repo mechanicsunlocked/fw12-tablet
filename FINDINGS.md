@@ -738,11 +738,30 @@ through AltGr plus two dead keys, with no custom layout and no `lb` needed.
 Under `de` the same dump is correct QWERTZ with `ü ö ä ß`, AltGr `€`, and ISO
 `< > |`.
 
-**Remaining gap:** the layout is read from Hyprland once, at daemon startup. A
-layout change while the daemon is running is not picked up. The brief requires
-it to follow the system live, so the daemon still needs to subscribe to
-Hyprland's `socket2` and react to `activelayout>>`, then recompile the keymap
-and re-upload it.
+**RESOLVED.** The daemon now subscribes to Hyprland's `.socket2.sock` and
+reacts to `activelayout` (and `configreloaded`, since a layout can change that
+way without an activelayout event). Verified live:
+
+```
+de -> us(intl):  layout changed to 'us' variant intl (ISO body)
+us(intl) -> de:  layout changed to 'de' (ISO body)
+```
+
+Two details that matter:
+
+- Hyprland emits **one `activelayout` event per input device** -- six or more
+  per actual change. The event also carries a display name ("German", "English
+  (US, intl., with dead keys)"), not an xkb code, so it is used only as a
+  trigger and the authoritative value is re-queried from `input:kb_layout`.
+  `vkbd_set_layout` compares against the current names and returns early when
+  unchanged, so six events produce one keymap rebuild.
+- **Our own virtual keyboard emits `activelayout` events too** when we
+  re-upload the keymap (`hl-virtual-keyboard-fw12-oskd,German`). That is a
+  feedback loop waiting to happen, and the same dedup is what breaks it.
+
+A keymap that fails to compile keeps the previous one rather than leaving the
+daemon with none: a bad layout string degrades to stale legends, not to "cannot
+type".
 
 ### 3.2 What this means for the architecture
 

@@ -20,6 +20,7 @@
  */
 #include "fcitx.h"
 #include "hypr.h"
+#include "hyprevt.h"
 #include "log.h"
 #include "vkbd.h"
 
@@ -35,6 +36,7 @@ int fw12_debug;
 
 typedef struct {
     vkbd *kbd;
+    hyprevt *evt;
     bool selftest;
     bool selftest_done;
     bool visible;
@@ -107,6 +109,22 @@ static void on_hide(void *user)
 static void on_im_changed(const char *name, void *user)
 {
     log_info("input method: %s", name);
+}
+
+/* Hyprland says the layout may have moved. Re-read the authoritative value and
+ * rebuild the keymap. The event payload carries a display name ("German"), not
+ * an xkb code, so it serves only as a trigger. */
+static void on_layout_change(void *user)
+{
+    app *a = user;
+    char layout[64] = "", variant[64] = "", options[128] = "";
+
+    hypr_get_string("input:kb_layout", layout, sizeof layout);
+    hypr_get_string("input:kb_variant", variant, sizeof variant);
+    hypr_get_string("input:kb_options", options, sizeof options);
+
+    if (vkbd_set_layout(a->kbd, layout, variant, options) == 1)
+        log_dbg("legends need refreshing");
 }
 
 /* Print what each key would show at every shift level. Runs standalone -- no
@@ -229,8 +247,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Not fatal if unavailable: without it the keyboard simply keeps the
+     * layout it started with. */
+    a.evt = hyprevt_open(on_layout_change, &a);
+
     for (;;) {
-        struct pollfd fds[3];
+        struct pollfd fds[4];
+        int nfds = 3;
         int timeout;
         int ready;
 
@@ -244,10 +267,17 @@ int main(int argc, char **argv)
         fds[2].events = POLLIN;
         fds[2].revents = 0;
 
+        if (a.evt) {
+            fds[3].fd = hyprevt_fd(a.evt);
+            fds[3].events = POLLIN;
+            fds[3].revents = 0;
+            nfds = 4;
+        }
+
         vkbd_flush(a.kbd);
         timeout = fcitx_timeout_ms(f);
 
-        ready = poll(fds, 3, timeout);
+        ready = poll(fds, nfds, timeout);
         if (ready < 0) {
             if (errno == EINTR)
                 continue;
@@ -270,12 +300,21 @@ int main(int argc, char **argv)
             }
         }
 
+        if (nfds > 3 && (fds[3].revents & (POLLIN | POLLHUP))) {
+            if (hyprevt_dispatch(a.evt) < 0) {
+                /* Keep running without layout following rather than dying. */
+                hyprevt_close(a.evt);
+                a.evt = NULL;
+            }
+        }
+
         if (fcitx_dispatch(f) < 0) {
             rc = 1;
             break;
         }
     }
 
+    hyprevt_close(a.evt);
     fcitx_close(f);
     vkbd_close(a.kbd);
     close(sig_fd);
