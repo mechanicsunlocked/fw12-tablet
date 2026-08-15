@@ -18,6 +18,7 @@
 struct fcitx {
     sd_bus *bus;
     sd_bus_slot *obj_slot;
+    sd_bus_slot *owner_slot;
     fcitx_callbacks cb;
     bool owns_name;
     bool activated; /* we asked fcitx5 to switch to virtualkeyboard mode */
@@ -97,6 +98,48 @@ static int call_vk(fcitx *f, const char *method)
     return 0;
 }
 
+void fcitx_activate(fcitx *f)
+{
+    if (call_vk(f, "ShowVirtualKeyboard") != 0) {
+        f->activated = false;
+        log_warn("fcitx5 did not accept ShowVirtualKeyboard; "
+                 "auto-show will not work");
+        return;
+    }
+    f->activated = true;
+
+    /* Tell fcitx5 a keyboard is actually there. Without this it decides there
+     * is none and quietly reverts CurrentUI to classicui -- we keep the bus
+     * name and simply stop receiving show/hide, so nothing looks broken from
+     * here. Measured: fcitx5's pid was unchanged across the revert, so this is
+     * a state it drops into, not a restart. */
+    fcitx_set_visible(f, true);
+}
+
+/* fcitx5 came or went. On `came back`, re-assert virtual-keyboard mode: the
+ * new instance has no idea we are its keyboard, even though we still hold the
+ * bus name it watches. */
+static int on_name_owner_changed(sd_bus_message *m, void *userdata,
+                                 sd_bus_error *e)
+{
+    fcitx *f = userdata;
+    const char *name = NULL, *old_owner = NULL, *new_owner = NULL;
+
+    if (sd_bus_message_read(m, "sss", &name, &old_owner, &new_owner) < 0)
+        return 0;
+    if (!name || strcmp(name, FCITX_SERVICE) != 0)
+        return 0;
+
+    if (new_owner && *new_owner) {
+        log_info("fcitx5 restarted; re-registering as the virtual keyboard");
+        fcitx_activate(f);
+    } else {
+        log_warn("fcitx5 went away; auto-show is paused until it returns");
+        f->activated = false;
+    }
+    return 0;
+}
+
 fcitx *fcitx_open(const fcitx_callbacks *cb)
 {
     fcitx *f = calloc(1, sizeof *f);
@@ -131,13 +174,19 @@ fcitx *fcitx_open(const fcitx_callbacks *cb)
     }
     f->owns_name = true;
 
+    /* fcitx5 restarting drops its virtualkeyboard UI mode while we keep the
+     * bus name, so nothing looks wrong from here -- we simply stop receiving
+     * show/hide and auto-show dies silently. Watch for it coming back and
+     * re-assert. Observed in practice, not theoretical. */
+    r = sd_bus_match_signal(f->bus, &f->owner_slot, "org.freedesktop.DBus",
+                            "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                            "NameOwnerChanged", on_name_owner_changed, f);
+    if (r < 0)
+        log_warn("cannot watch for fcitx5 restarts: %s", strerror(-r));
+
     /* Owning the name is not enough on its own: fcitx5 only switches its UI to
      * the on-screen-keyboard backend once this is also called. */
-    if (call_vk(f, "ShowVirtualKeyboard") == 0)
-        f->activated = true;
-    else
-        log_warn("fcitx5 did not accept ShowVirtualKeyboard; "
-                 "auto-show may not work");
+    fcitx_activate(f);
 
     log_info("registered with fcitx5 as the virtual keyboard");
     return f;
@@ -162,6 +211,8 @@ void fcitx_close(fcitx *f)
         call_vk(f, "HideVirtualKeyboard");
     if (f->owns_name)
         sd_bus_release_name(f->bus, VK_NAME);
+    if (f->owner_slot)
+        sd_bus_slot_unref(f->owner_slot);
     if (f->obj_slot)
         sd_bus_slot_unref(f->obj_slot);
     sd_bus_flush(f->bus);

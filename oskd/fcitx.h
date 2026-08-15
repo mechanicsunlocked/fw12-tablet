@@ -57,6 +57,11 @@ int fcitx_dispatch(fcitx *f);
 int fcitx_send_key(fcitx *f, uint32_t keysym, uint32_t keycode,
                    uint32_t states, bool is_release);
 
+/* Ask fcitx5 to switch to virtual-keyboard mode. Called at startup and again
+ * whenever fcitx5 restarts -- a new instance does not know we are its keyboard
+ * even though we still hold the bus name it watches. */
+void fcitx_activate(fcitx *f);
+
 /* Tell fcitx5 whether our surface is actually visible. */
 int fcitx_set_visible(fcitx *f, bool visible);
 

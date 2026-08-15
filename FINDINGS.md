@@ -763,6 +763,44 @@ A keymap that fails to compile keeps the previous one rather than leaving the
 daemon with none: a bad layout string degrades to stale legends, not to "cannot
 type".
 
+### 3.1h Two things fcitx5 requires that are easy to miss
+
+Both were found by the keyboard silently not appearing, with no error anywhere.
+
+**`ProcessVisibilityEvent(true)` is mandatory, not optional.** Owning the bus
+name and calling `ShowVirtualKeyboard` is enough to flip `CurrentUI` to
+`virtualkeyboard` -- but if the keyboard never reports itself visible, fcitx5
+concludes there is none and quietly reverts to `classicui`. We keep the bus
+name and simply stop receiving show/hide. Nothing looks wrong from our side.
+
+Confirmed it is a revert and not a crash: fcitx5's pid was unchanged across it
+(1398 before and after), and `hl-virtual-keyboard-fcitx5` reappeared on the
+seat, which fcitx5 only creates when it is *not* in virtual-keyboard mode --
+a useful tell when debugging this.
+
+**fcitx5 restarting also drops the mode**, while we keep the name it watches.
+A new instance has no idea we are its keyboard. The daemon now watches
+`NameOwnerChanged` for `org.fcitx.Fcitx5` and re-asserts.
+
+### 3.1i Quickshell notes from building the plugin
+
+- **`visible` cannot be a property name on an `Item`.** It is FINAL on
+  `QQuickItem`, and overriding it fails the whole component with
+  `Cannot override FINAL property`. Renamed to `shown`.
+- **Editing a plugin QML file hot-reloads, but a component that previously
+  failed to compile stays failed.** The shell logged the same error at the same
+  line long after the line had become a comment, and the file compiled cleanly
+  standalone. Qt caches compiled components by URL, and `rescanPlugins` does not
+  clear that cache. `omarchy-restart-shell` does. Worth knowing before spending
+  time on a fix that is already correct.
+- **Re-assigning `Socket.connected = true` does not retry a failed
+  connection.** After the daemon restarted, the shell logged `PeerClosedError`
+  then `ServerNotFoundError` and stopped trying. Clearing `path` first tears the
+  socket down so the next assignment builds a fresh one.
+- **fcitx5's show/hide churn is visible as flicker.** The keyboard appeared and
+  vanished as focus moved, exactly as the §3.1a capture predicted. A 300 ms
+  debounce on hide -- cancelled by any show -- fixes it.
+
 ### 3.2 What this means for the architecture
 
 This replaces the brief's "fw12d becomes the seat's input-method client" design
