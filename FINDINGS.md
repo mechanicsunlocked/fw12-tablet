@@ -962,6 +962,94 @@ sequences and candidate handling that Qt VK would have to reimplement.
 
 ---
 
+## 5.7 Hyprland's Lua config can do rotation itself — possibly no daemon needed
+
+Discovered late (2026-08-15), while implementing the daemon. **This may remove
+most of Component A and needs resolving before more code is written.**
+
+### `keyword` does not work on Omarchy 4
+
+The first implementation used `hyprctl keyword monitor ...` over the IPC socket,
+as fw12tab did. Hyprland refuses it:
+
+```
+$ hyprctl keyword monitor "eDP-1,preferred,auto,2,transform,1"
+keyword can't work with non-legacy parsers. Use eval.
+```
+
+Omarchy 4 configures Hyprland in **Lua**, and the Lua config manager rejects
+`keyword` outright. The two are mutually exclusive — the binary also carries
+`eval is only supported with the lua config manager`. Anything ported from an
+Omarchy 3 / hyprlang setup will silently do nothing here: note that `hyprctl`
+still **exits 0** while refusing the command.
+
+The working form is `eval` with a Lua statement, verified applying and
+reverting a real rotation:
+
+```lua
+local ms = hl.get_monitors()
+local t = nil
+for _, m in ipairs(ms) do if m.name:sub(1,3) == "eDP" then t = m break end end
+if not t then t = ms[1] end
+if t then hl.monitor({output=t.name, mode="preferred", position="auto",
+                      scale=t.scale, transform=N}) end
+hl.config({input={touchdevice={transform=N}, tablet={transform=N}}})
+```
+
+Result: `transform: 1`, `input:touchdevice:transform 1`,
+`input:tablet:transform 1`, scale preserved at 2. Reverting to 0 restores it.
+
+Note `eval` returns `"ok"` on the socket regardless of what the Lua returns —
+return values are **not** surfaced. To get data out of Lua, write a file.
+
+### The Lua environment is far more capable than expected
+
+Verified by having Lua write its results to a file:
+
+```
+accel-display: iio:device0          <- found by label, probing iio:device0..9
+raw: x=224 y=11472 z=11760          <- io.open on sysfs works
+hl.timer exists: function           <- {timeout=ms, type="repeat"|"oneshot"}
+hl.bind exists: function
+hl.bind("switch:on:gpio-keys", ...) <- registers without error
+```
+
+So Hyprland's Lua has an unrestricted `io` library, can read the accelerometer
+directly, has a repeating timer, and accepts `switch:on:` / `switch:off:` bind
+keys. Lua has no directory listing, but probing `iio:device0..9` and matching
+`label` sidesteps that and is boot-stable (§2.1).
+
+**If the switch bind actually fires** — registered cleanly but *not yet observed
+firing*, which needs a physical fold — then tablet detection and auto-rotation
+can both live in a Lua config file with **no daemon at all**: no evdev watcher,
+no inotify hotplug logic, no poll loop, no Hyprland IPC client, no socket
+protocol, no systemd user unit.
+
+### What Lua still cannot do
+
+- **No UI.** The entire 1777-line `hl.meta.lua` API is configuration — binds,
+  monitors, rules, dispatchers, notifications. There is no drawing, surface, or
+  widget call. **An on-screen keyboard cannot be written in Hyprland Lua.**
+- **No DBus.** So the fcitx5 virtual-keyboard bridge (§3.1) cannot be Lua
+  either.
+
+### The trade-off to weigh before deciding
+
+A Lua timer polling the accelerometer runs **inside the compositor process**. A
+callback that blocks or throws degrades the whole desktop, where a separate
+process cannot. Three small sysfs reads at 4 Hz is cheap, and the reads are
+from a kernel-backed virtual filesystem rather than disk — but it is still
+compositor time, and it is the honest argument for keeping a daemon.
+
+Against that: the Lua version deletes roughly 400 lines of C and every moving
+part between the daemon and Hyprland, which is exactly the "as simple as
+possible, bulletproof across versions" goal.
+
+**Unresolved. Do not build further on either path until the switch bind is
+confirmed to fire.**
+
+---
+
 ## 6. Language choice: C vs Rust
 
 The brief mandates Rust or C for the daemon and prefers Rust.
