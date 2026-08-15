@@ -1045,8 +1045,63 @@ Against that: the Lua version deletes roughly 400 lines of C and every moving
 part between the daemon and Hyprland, which is exactly the "as simple as
 possible, bulletproof across versions" goal.
 
-**Unresolved. Do not build further on either path until the switch bind is
-confirmed to fire.**
+### RESOLVED — the Lua path works end to end
+
+Switch binds fire in both directions:
+
+```
+16:00:32 TABLET ON  fired
+16:00:39 TABLET OFF fired
+```
+
+And the full cycle was captured live, sampling switch state and all three
+transforms at 1.5 s:
+
+```
+42  switch=1  mon=0  touch=0  pen=0     <- fold detected
+43  switch=1  mon=3  touch=3  pen=3     <- rotation applied, all three together
+    ...
+    switch=0  mon=0  touch=0  pen=0     <- unfold reset everything
+```
+
+Monitor, touch and stylus move in lockstep, which is the property that has to
+hold or the pen stops landing where the user points. Hyprland sits at **0.2%
+CPU** with the 4 Hz poll running inside it.
+
+### `hyprctl reload` rebuilds the entire Lua state
+
+Worth recording because it removed code rather than adding it. The first
+implementation carried reload-safety machinery — state kept on a global,
+unbind-before-bind, timer teardown — on the assumption that Omarchy's
+`bootstrap.lua` clearing `package.loaded` could leave stale binds and timers
+behind.
+
+It cannot. Setting a marker global and reloading three times:
+
+```
+marker before reload:  "set-before-reload"
+marker after 3 reloads: nil
+switch binds:          exactly 1 of each
+SUPER+R binds:         1
+Hyprland CPU:          0.2%
+```
+
+Hyprland destroys and rebuilds the Lua state on every reload, so nothing
+survives to duplicate. The teardown code was guarding an impossible condition
+and has been deleted.
+
+**Install must go through `require()`, not `dofile`.** A module loaded with
+`dofile` via `hyprctl eval` works until the first `hyprctl reload`, which
+rebuilds the config from `hyprland.lua` and silently drops every bind the
+module registered. The line
+`require("hypr.fw12-tablet")` in `~/.config/hypr/hyprland.lua` is what makes it
+survive.
+
+### Still unverified
+
+- More than one orientation change within a single tablet session.
+- `SUPER + R` rotation lock behaviour.
+- Suspend/resume while folded.
 
 ---
 
