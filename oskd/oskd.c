@@ -21,6 +21,8 @@
 #include "fcitx.h"
 #include "hypr.h"
 #include "hyprevt.h"
+#include "ipc.h"
+#include "keys.h"
 #include "log.h"
 #include "vkbd.h"
 
@@ -37,6 +39,9 @@ int fw12_debug;
 typedef struct {
     vkbd *kbd;
     hyprevt *evt;
+    ipc *sock;
+    char layout[64];
+    char variant[64];
     bool selftest;
     bool selftest_done;
     bool visible;
@@ -84,11 +89,109 @@ static void selftest(app *a)
     log_info("self-test done");
 }
 
+/* JSON string escaping. Key labels are arbitrary UTF-8 from the keymap and do
+ * include the quote and backslash characters on most layouts. */
+static void json_escape(const char *in, char *out, size_t out_sz)
+{
+    size_t o = 0;
+
+    for (; *in && o + 7 < out_sz; in++) {
+        unsigned char c = (unsigned char)*in;
+
+        if (c == '"' || c == '\\') {
+            out[o++] = '\\';
+            out[o++] = (char)c;
+        } else if (c < 0x20) {
+            o += (size_t)snprintf(out + o, out_sz - o, "\\u%04x", c);
+        } else {
+            out[o++] = (char)c;
+        }
+    }
+    out[o] = '\0';
+}
+
+/* Send the whole keyboard: geometry and, for each key, what it prints at each
+ * of the four shift levels. The plugin renders this and nothing more, so a
+ * key's label can never disagree with what it types. */
+static void send_keymap(app *a)
+{
+    const keyrow *rows;
+    int nrows, r, k, lv;
+    char msg[16384];
+    size_t off = 0;
+    bool iso = vkbd_is_iso(a->kbd);
+
+    if (!ipc_has_client(a->sock))
+        return;
+
+    nrows = keys_rows(iso, &rows);
+
+    off += (size_t)snprintf(msg + off, sizeof msg - off,
+                            "{\"t\":\"keymap\",\"layout\":\"%s\",\"variant\":\"%s\","
+                            "\"iso\":%s,\"rows\":[",
+                            a->layout, a->variant, iso ? "true" : "false");
+
+    for (r = 0; r < nrows; r++) {
+        off += (size_t)snprintf(msg + off, sizeof msg - off, "%s[",
+                                r ? "," : "");
+        for (k = 0; k < rows[r].count; k++) {
+            const keydef *kd = &rows[r].keys[k];
+            char lbl[4][16], esc[4][48];
+
+            for (lv = 0; lv < 4; lv++) {
+                if (kd->label)
+                    snprintf(lbl[lv], sizeof lbl[lv], "%s", kd->label);
+                else
+                    vkbd_key_label(a->kbd, kd->code, lv, lbl[lv],
+                                   sizeof lbl[lv]);
+                json_escape(lbl[lv], esc[lv], sizeof esc[lv]);
+            }
+
+            off += (size_t)snprintf(
+                msg + off, sizeof msg - off,
+                "%s{\"code\":%u,\"w\":%u,\"type\":%d,\"mod\":%u,"
+                "\"l\":[\"%s\",\"%s\",\"%s\",\"%s\"]}",
+                k ? "," : "", kd->code, kd->width, (int)kd->type, kd->modbit,
+                esc[0], esc[1], esc[2], esc[3]);
+        }
+        off += (size_t)snprintf(msg + off, sizeof msg - off, "]");
+    }
+
+    off += (size_t)snprintf(msg + off, sizeof msg - off, "]}\n");
+
+    if (off >= sizeof msg) {
+        log_err("keymap message truncated; not sending");
+        return;
+    }
+    ipc_send(a->sock, msg);
+    log_dbg("sent keymap (%zu bytes, %s)", off, iso ? "ISO" : "ANSI");
+}
+
+static void on_ipc_connect(void *user)
+{
+    send_keymap((app *)user);
+}
+
+static void on_ipc_key(uint32_t code, uint32_t mods, void *user)
+{
+    app *a = user;
+
+    tap(a->kbd, mods, code);
+}
+
+static void on_ipc_mods(uint32_t depressed, uint32_t locked, void *user)
+{
+    app *a = user;
+
+    vkbd_set_modifiers(a->kbd, depressed, locked);
+}
+
 static void on_show(void *user)
 {
     app *a = user;
 
     a->visible = true;
+    ipc_send(a->sock, "{\"t\":\"show\"}\n");
     log_info("show");
 
     if (a->selftest && !a->selftest_done) {
@@ -103,6 +206,7 @@ static void on_hide(void *user)
     app *a = user;
 
     a->visible = false;
+    ipc_send(a->sock, "{\"t\":\"hide\"}\n");
     log_info("hide");
 }
 
@@ -123,8 +227,11 @@ static void on_layout_change(void *user)
     hypr_get_string("input:kb_variant", variant, sizeof variant);
     hypr_get_string("input:kb_options", options, sizeof options);
 
-    if (vkbd_set_layout(a->kbd, layout, variant, options) == 1)
-        log_dbg("legends need refreshing");
+    if (vkbd_set_layout(a->kbd, layout, variant, options) == 1) {
+        snprintf(a->layout, sizeof a->layout, "%s", layout);
+        snprintf(a->variant, sizeof a->variant, "%s", variant);
+        send_keymap(a); /* legends must follow the layout */
+    }
 }
 
 /* Print what each key would show at every shift level. Runs standalone -- no
@@ -203,6 +310,8 @@ int main(int argc, char **argv)
     hypr_get_string("input:kb_options", options, sizeof options);
     log_info("layout from Hyprland: '%s' variant '%s' options '%s'",
              layout, variant, options);
+    snprintf(a.layout, sizeof a.layout, "%s", layout);
+    snprintf(a.variant, sizeof a.variant, "%s", variant);
 
     a.kbd = vkbd_open(layout, variant, options);
     if (!a.kbd) {
@@ -251,8 +360,18 @@ int main(int argc, char **argv)
      * layout it started with. */
     a.evt = hyprevt_open(on_layout_change, &a);
 
+    {
+        ipc_callbacks icb = {
+            .on_key = on_ipc_key,
+            .on_mods = on_ipc_mods,
+            .on_connect = on_ipc_connect,
+            .user = &a,
+        };
+        a.sock = ipc_open(&icb);
+    }
+
     for (;;) {
-        struct pollfd fds[4];
+        struct pollfd fds[6];
         int nfds = 3;
         int timeout;
         int ready;
@@ -267,11 +386,28 @@ int main(int argc, char **argv)
         fds[2].events = POLLIN;
         fds[2].revents = 0;
 
+        int evt_i = -1, lis_i = -1, cli_i = -1;
+
         if (a.evt) {
-            fds[3].fd = hyprevt_fd(a.evt);
-            fds[3].events = POLLIN;
-            fds[3].revents = 0;
-            nfds = 4;
+            evt_i = nfds;
+            fds[nfds].fd = hyprevt_fd(a.evt);
+            fds[nfds].events = POLLIN;
+            fds[nfds].revents = 0;
+            nfds++;
+        }
+        if (a.sock) {
+            lis_i = nfds;
+            fds[nfds].fd = ipc_listen_fd(a.sock);
+            fds[nfds].events = POLLIN;
+            fds[nfds].revents = 0;
+            nfds++;
+            if (ipc_has_client(a.sock)) {
+                cli_i = nfds;
+                fds[nfds].fd = ipc_client_fd(a.sock);
+                fds[nfds].events = POLLIN;
+                fds[nfds].revents = 0;
+                nfds++;
+            }
         }
 
         vkbd_flush(a.kbd);
@@ -300,13 +436,17 @@ int main(int argc, char **argv)
             }
         }
 
-        if (nfds > 3 && (fds[3].revents & (POLLIN | POLLHUP))) {
+        if (evt_i >= 0 && (fds[evt_i].revents & (POLLIN | POLLHUP))) {
             if (hyprevt_dispatch(a.evt) < 0) {
                 /* Keep running without layout following rather than dying. */
                 hyprevt_close(a.evt);
                 a.evt = NULL;
             }
         }
+        if (lis_i >= 0 && (fds[lis_i].revents & POLLIN))
+            ipc_accept(a.sock);
+        if (cli_i >= 0 && (fds[cli_i].revents & (POLLIN | POLLHUP)))
+            ipc_dispatch(a.sock);
 
         if (fcitx_dispatch(f) < 0) {
             rc = 1;
@@ -314,6 +454,7 @@ int main(int argc, char **argv)
         }
     }
 
+    ipc_close(a.sock);
     hyprevt_close(a.evt);
     fcitx_close(f);
     vkbd_close(a.kbd);
