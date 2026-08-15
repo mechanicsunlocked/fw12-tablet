@@ -1,0 +1,14 @@
+[Unit]
+Description=Bind the Framework 12 SW_TABLET_MODE switch (soc_button_array probe-race fallback)
+ConditionPathExists=/sys/bus/platform/drivers/soc_button_array
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/fw12-tablet/bind-tablet-switch
+
+[Install]
+WantedBy=sysinit.target

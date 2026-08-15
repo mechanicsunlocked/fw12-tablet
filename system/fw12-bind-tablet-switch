@@ -1,0 +1,26 @@
+#!/bin/bash
+# Bind the Framework 12 SW_TABLET_MODE switch if it came up unbound.
+#
+# Fallback for the soc_button_array/pinctrl_tigerlake probe race. The real fix
+# is loading both from the initramfs (see fw12-tablet.conf); this is the
+# belt-and-braces for a boot or resume where it still loses.
+#
+# Idempotent and silent when there is nothing to do, so it is safe to run from
+# both a boot unit and a system-sleep hook.
+set -u
+
+drv=/sys/bus/platform/drivers/soc_button_array
+
+modprobe pinctrl_tigerlake 2>/dev/null || true
+modprobe soc_button_array 2>/dev/null || true
+
+[ -d "$drv" ] || exit 0
+
+for dev in /sys/bus/platform/devices/INT33D3:*; do
+    [ -e "$dev" ] || continue
+    id=${dev##*/}
+    [ -e "$drv/$id" ] && continue # already bound
+    echo "$id" > "$drv/bind" 2>/dev/null || true
+done
+
+exit 0

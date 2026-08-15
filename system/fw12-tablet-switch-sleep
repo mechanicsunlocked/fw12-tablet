@@ -1,0 +1,12 @@
+#!/bin/bash
+# systemd-sleep hook: re-bind the SW_TABLET_MODE switch after resume.
+#
+# Install as /usr/lib/systemd/system-sleep/fw12-tablet-switch
+#
+# NOTE: unlike the boot-time race, a switch that drops across suspend/resume is
+# NOT yet confirmed on this hardware -- a hibernate cycle was tested while the
+# switch was already unbound, so it proved nothing either way. This is included
+# as cheap insurance because it is idempotent and does nothing when the switch
+# is already bound. Remove it if resume turns out to be reliable.
+[ "${1:-}" = post ] && /usr/lib/fw12-tablet/bind-tablet-switch
+exit 0
