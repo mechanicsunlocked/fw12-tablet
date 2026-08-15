@@ -8,3 +8,6 @@ tools/qsvktest/
 # Phase 0 capture logs (raw measurements; findings are in FINDINGS.md)
 tools/*.log
 tools/snap-*.txt
+oskd/fw12-oskd
+oskd/*.o
+tools/vkspy
