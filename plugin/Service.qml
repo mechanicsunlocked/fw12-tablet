@@ -26,7 +26,7 @@ Item {
   property bool forcedVisible: false
   // NB: not `visible` -- that is FINAL on Item and cannot be overridden.
   readonly property bool shown: forcedVisible || wantVisible
-  readonly property bool connected: sock.connected
+  readonly property bool connected: link.item ? link.item.connected : false
 
   // Latched modifiers, as VKBD_* bits. `locked` survives a keypress
   // (CapsLock); `latched` is one-shot and clears after the next key, which is
@@ -40,10 +40,15 @@ Item {
 
   signal keymapChanged()
 
+  // Both ends can fail quietly -- a daemon that is not running looks exactly
+  // like one that is running but has nothing to say. One line per transition
+  // makes the difference visible in the shell log without adding noise.
+  onConnectedChanged: console.log("[fw12] daemon", root.connected ? "connected" : "gone")
+
   function sendKey(code) {
-    if (!sock.connected) return
-    sock.write(JSON.stringify({ t: "key", code: code, mods: root.mods }) + "\n")
-    sock.flush()
+    if (!root.connected) return
+    link.item.write(JSON.stringify({ t: "key", code: code, mods: root.mods }) + "\n")
+    link.item.flush()
     // One-shot modifiers clear after use; locked ones stay.
     if (root.latched !== 0) root.latched = 0
   }
@@ -106,49 +111,55 @@ Item {
     }
   }
 
-  Socket {
-    id: sock
-    path: root.socketPath
-    connected: true
+  // The daemon may start after the shell, be restarted under it, or be updated
+  // by a package upgrade while the shell keeps running. None of those should
+  // need a shell restart to recover from, so the connection is a disposable
+  // object we rebuild rather than a fixed one we try to revive.
+  //
+  // Poking the existing Socket -- clearing `path`, re-assigning `connected` --
+  // does not work. Measured: after the daemon was killed and restarted, a
+  // 2 s retry doing exactly that never reconnected, because a Socket that has
+  // already failed keeps that state internally and setting the same properties
+  // again is a no-op it never acts on. Destroying the Loader's contents and
+  // building a fresh Socket is the only thing that reliably reconnects.
+  Loader {
+    id: link
+    active: true
+    sourceComponent: Component {
+      Socket {
+        path: root.socketPath
+        connected: true
 
-    parser: SplitParser {
-      splitMarker: "\n"
-      onRead: line => root.handleLine(line)
-    }
+        parser: SplitParser {
+          splitMarker: "\n"
+          onRead: line => root.handleLine(line)
+        }
 
-    onConnectionStateChanged: {
-      if (!connected) {
-        // The daemon went away: drop the keyboard rather than leaving a
-        // surface that types into nothing.
-        root.wantVisible = false
-        root.forcedVisible = false
-        root.rows = []
+        onConnectionStateChanged: {
+          if (!connected) {
+            // The daemon went away: drop the keyboard rather than leaving a
+            // surface that types into nothing.
+            root.wantVisible = false
+            root.forcedVisible = false
+            root.rows = []
+          }
+        }
       }
     }
   }
 
-  // The daemon may start after the shell, or be restarted under it. Retrying
-  // is cheap and means neither has to care about start order.
-  //
-  // Re-assigning `connected` alone does not retry -- setting it true while the
-  // socket is already in a failed state is a no-op, so the shell gave up after
-  // one ServerNotFoundError. Clearing `path` tears the socket down so the next
-  // assignment builds a fresh one.
-  // Deliberately ungated. Driving `running` off `!sock.connected` looked
-  // right and silently stopped retrying: after the daemon restarted the shell
-  // logged PeerClosedError, then ServerNotFoundError, then nothing. A 2 s
-  // no-op tick costs nothing and does not depend on `connected` meaning
-  // exactly what we assume.
+  // Deliberately ungated: the tick runs whether or not we believe we are
+  // connected, and decides inside. Driving `running` off the connection state
+  // looked tidier and silently stopped retrying for good once the shell's idea
+  // of that state stopped matching reality. A 2 s no-op tick costs nothing.
   Timer {
     interval: 2000
     running: true
     repeat: true
     onTriggered: {
-      if (sock.connected) return
-      sock.connected = false
-      sock.path = ""
-      sock.path = root.socketPath
-      sock.connected = true
+      if (root.connected) return
+      link.active = false
+      link.active = true
     }
   }
 }

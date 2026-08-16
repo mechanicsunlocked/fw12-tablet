@@ -35,7 +35,11 @@ Item {
 
   PanelWindow {
     id: win
+    // `rows.length > 0` is not defensive padding: the daemon sends the keymap
+    // on connect, so between mounting and that message there is a window where
+    // showing would produce an empty strip that swallows taps.
     visible: root.shown && root.rows.length > 0
+    onVisibleChanged: console.log("[fw12] keyboard", visible ? "shown" : "hidden")
 
     anchors { left: true; right: true; bottom: true }
     implicitHeight: Math.round(screen.height * 0.34)
