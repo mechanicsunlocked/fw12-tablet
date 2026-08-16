@@ -104,37 +104,49 @@ Item {
           }
         }
 
-        MouseArea {
+        // TapHandler for the same reason as the keys: a MouseArea here would
+        // compete with them for the touch point.
+        TapHandler {
           id: dismissArea
-          anchors.fill: parent
-          onPressed: if (root.service) root.service.toggleKeyboard()
+          acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Mouse
+          onPressedChanged: if (pressed && root.service) root.service.toggleKeyboard()
         }
       }
 
+      // Every pixel belongs to a key.
+      //
+      // The gaps between keys used to be real: rows and keys were spaced
+      // apart, and a touch landing in a gap hit nothing at all. On a screen
+      // this size that is a lattice of dead lines across the keyboard, and it
+      // reads as "you have to hit the middle of the key".
+      //
+      // So the spacing is gone and the gap is drawn instead -- each key owns
+      // its full share of the row, and the visible rounded rectangle is inset
+      // inside it. It looks identical and there is nowhere left to miss.
       Column {
         id: grid
         anchors.fill: parent
         anchors.margins: Style.space(6)
-        spacing: Style.space(4)
+        spacing: 0
 
-        readonly property real rowHeight:
-          (height - (spacing * (root.rows.length - 1))) / Math.max(1, root.rows.length)
-        readonly property real unit:
-          (width - Style.space(4) * (root.rowUnits / 4 - 1)) / root.rowUnits
+        readonly property real gap: Style.space(4)
+        readonly property real rowHeight: height / Math.max(1, root.rows.length)
 
         Repeater {
           model: root.rows
 
           Row {
             required property var modelData
-            spacing: Style.space(4)
+            spacing: 0
             height: grid.rowHeight
             width: grid.width
 
             Repeater {
               model: parent.modelData
 
-              Rectangle {
+              // The touch target: the key's whole share of the row, gap
+              // included. Not drawn.
+              Item {
                 id: key
                 required property var modelData
 
@@ -142,42 +154,58 @@ Item {
                 readonly property bool active:
                   isMod && (root.mods & modelData.mod) !== 0
 
-                width: grid.unit * modelData.w + Style.space(4) * (modelData.w / 4 - 1)
+                width: grid.width * modelData.w / root.rowUnits
                 height: grid.rowHeight
-                radius: Style.space(6)
 
-                color: active ? Color.accent
-                     : pressArea.pressed ? Color.muted
-                     : Qt.rgba(Color.foreground.r, Color.foreground.g,
-                               Color.foreground.b, 0.10)
-
-                Behavior on color { ColorAnimation { duration: 90 } }
-
-                Text {
-                  anchors.centerIn: parent
-                  text: {
-                    var labels = key.modelData.l || []
-                    var lv = key.isMod ? 0 : root.levelFor()
-                    return labels[lv] && labels[lv].length > 0 ? labels[lv] : (labels[0] || "")
+                function fire() {
+                  if (!root.service) return
+                  if (key.isMod) {
+                    // CapsLock is a lock; every other modifier is one-shot,
+                    // which is what a touch keyboard wants.
+                    if (key.modelData.mod === 2) root.service.toggleLock(key.modelData.mod)
+                    else root.service.toggleLatch(key.modelData.mod)
+                  } else {
+                    root.service.sendKey(key.modelData.code)
                   }
-                  color: key.active ? Color.background : Color.foreground
-                  font.pixelSize: Math.max(11, Math.round(grid.rowHeight * 0.38))
                 }
 
-                MouseArea {
-                  id: pressArea
+                // The visible key, inset so the gap is painted rather than
+                // being a hole in the input surface.
+                Rectangle {
                   anchors.fill: parent
-                  onPressed: {
-                    if (!root.service) return
-                    if (key.isMod) {
-                      // CapsLock is a lock; every other modifier is one-shot,
-                      // which is what a touch keyboard wants.
-                      if (key.modelData.mod === 2) root.service.toggleLock(key.modelData.mod)
-                      else root.service.toggleLatch(key.modelData.mod)
-                    } else {
-                      root.service.sendKey(key.modelData.code)
+                  anchors.margins: grid.gap / 2
+                  radius: Style.space(6)
+
+                  color: key.active ? Color.accent
+                       : tap.pressed ? Color.muted
+                       : Qt.rgba(Color.foreground.r, Color.foreground.g,
+                                 Color.foreground.b, 0.10)
+
+                  Behavior on color { ColorAnimation { duration: 90 } }
+
+                  Text {
+                    anchors.centerIn: parent
+                    text: {
+                      var labels = key.modelData.l || []
+                      var lv = key.isMod ? 0 : root.levelFor()
+                      return labels[lv] && labels[lv].length > 0 ? labels[lv] : (labels[0] || "")
                     }
+                    color: key.active ? Color.background : Color.foreground
+                    font.pixelSize: Math.max(11, Math.round(grid.rowHeight * 0.38))
                   }
+                }
+
+                // TapHandler, not MouseArea. A MouseArea tracks one press at a
+                // time, so putting a second finger down before lifting the
+                // first meant the second key never fired -- which is exactly
+                // what typing fast is. Pointer handlers track touch points
+                // independently, so two keys can be down at once.
+                TapHandler {
+                  id: tap
+                  acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Mouse
+                  // Fire on touch-down, like a real key, rather than waiting
+                  // for the lift to decide it was a tap.
+                  onPressedChanged: if (pressed) key.fire()
                 }
               }
             }
