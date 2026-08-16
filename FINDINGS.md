@@ -1591,3 +1591,120 @@ accel-display raw            x=3440  y=15376  z=-1232
 
 Note the switch is already unbound *before* any suspend, so the boot race and
 any resume race are separate failures that must be distinguished.
+
+---
+
+## 8. The on-screen keyboard, revisited: squeekboard works
+
+Constraints for this pass: fcitx5 must not be touched, Omarchy must not be
+modified, official Arch repos only, and the result must be a light plugin.
+All of the below was measured on this machine on 2026-08-16, by extracting
+packages from the mirror into a scratch directory and running them against the
+live session. **Nothing was installed and no configuration was changed.**
+
+### 8.1 fcitx5 does hold the input-method-v2 slot — proven
+
+Written down before as an inference; now it is measured. Running squeekboard
+with fcitx5 up produced, in `WAYLAND_DEBUG`:
+
+```
+ -> zwp_input_method_manager_v2#37.get_input_method(wl_seat#36, new id zwp_input_method_v2#35)
+    zwp_input_method_v2#35.unavailable()
+ -> zwp_input_method_v2#35.destroy()
+```
+
+Hyprland answers a second input-method client with `unavailable`. So no OSK
+can use input-method-v2 here without stopping fcitx5 first. That is the whole
+reason auto-show is hard, and it is a protocol fact, not a bug.
+
+### 8.2 Stevia (`extra/stevia`) cannot run on Hyprland — one missing global
+
+Stevia is the current Phosh keyboard and looked like the obvious answer: it is
+in `extra`, it is maintained, and it exposes `sm.puri.OSK0` for show/hide. It
+starts on Hyprland, finds the output, and takes the DBus name, then stops at:
+
+```
+phosh-osk-stevia-DEBUG: Wayland not yet ready, skipping input surface creation
+```
+
+`pos_wayland_has_wl_protcols()` requires eight globals. Seven are present on
+Hyprland. The eighth, `zphoc_device_state_v1`, is phoc-only — it is how phoc
+tells the keyboard about the lid and tablet-mode switches. Hyprland will never
+advertise it, and only a compositor can advertise a global, so this cannot be
+worked around from outside. Checked against the packaged 0.56.0 binary:
+
+```
+zphoc_device_state_v1        *** MISSING ***
+zphoc_lid_switch_v1
+zphoc_tablet_mode_switch_v1
+```
+
+Stevia is therefore out, permanently, not pending a fix at our end.
+
+### 8.3 squeekboard (`extra/squeekboard` 1.43.1) does work
+
+squeekboard predates the phoc dependency. `strings` shows zero `zphoc_`
+references; it uses only `zwlr_layer_shell_v1`, `zwp_input_method_v2` and
+`zwp_virtual_keyboard_v1`, and Hyprland advertises all three.
+
+Run against the live session with fcitx5 up and untouched:
+
+* takes `sm.puri.OSK0` on the session bus
+* is told `unavailable` for input-method-v2 (§8.1) and **carries on**
+* `busctl call --user sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b true`
+  maps a layer surface — `namespace: osk, xywh: 0 550 1200 200`,
+  `set_exclusive_zone(200)`, `set_keyboard_interactivity(0)`
+* `SetVisible b false` unmaps it cleanly; zero `osk` layers afterwards
+* creates `zwp_virtual_keyboard_v1` and uploads a keymap on show
+
+`set_keyboard_interactivity(0)` matters: the keyboard never takes focus, so the
+window being typed into keeps it. `set_exclusive_zone(200)` matters too — tiled
+windows shrink instead of being covered.
+
+Keys are emitted as `zwp_virtual_keyboard_v1` events, i.e. as if typed on real
+hardware. **fcitx5 sees them and processes them normally**, so compose
+sequences and input methods keep working from the on-screen keyboard. This is
+the opposite of the old design, which fought fcitx5 for control of the same
+job.
+
+### 8.4 What squeekboard gives us for free
+
+Built-in layouts include `us`, `de`, `us_wide`, `de_wide`, and — worth noting
+for this machine — `terminal/us` and `terminal/de`, a layout with Ctrl, Esc,
+Tab and arrows. There are also `number`, `emoji`, `url`, `email` and `pin`
+views. Layout selection follows `org.gnome.desktop.input-sources sources`,
+which is currently unset here (`@a(ss) []`), producing a
+`WARNING: No system layout present` and a default US layout.
+
+### 8.5 What is still missing: nothing knows when to show it
+
+Without input-method-v2, squeekboard cannot see text-field focus, so it will
+never show itself. Something has to call `SetVisible`. Two options:
+
+**A — manual toggle.** A bar button, a keybind, or a gesture calls `SetVisible`.
+Perhaps ten lines. No daemon, no fcitx5 interaction, nothing to go wrong. This
+is the "simple, fast, bulletproof" answer.
+
+**B — let fcitx5 decide.** fcitx5 already tracks text-field focus perfectly. Its
+`virtualkeyboard` UI addon (`libvirtualkeyboard.so`, `UIType=OnScreenKeyboard`,
+`OnDemand=True`) calls a registered client to show and hide. A small daemon
+that registers as that client and forwards to `SetVisible` gets real auto-show
+with no UI code at all. Most of it already exists in git history as `oskd`'s
+`fcitx.c`. The known wrinkle is §3.1j: fcitx5 hides the keyboard whenever it
+sees a key event, and squeekboard's keys *are* key events, so the 300 ms
+self-hide suppression window from the old daemon is still required.
+
+Note the DBus object at `/virtualkeyboard` exposes only `ShowVirtualKeyboard`,
+`HideVirtualKeyboard` and `ToggleVirtualKeyboard` — there is no key-input path
+through fcitx5, which is why the keyboard itself must inject.
+
+### 8.6 Ruled out
+
+| Candidate | Verdict |
+| --- | --- |
+| `extra/stevia` | needs `zphoc_device_state_v1`; phoc only (§8.2) |
+| `extra/plasma-keyboard` | binds `zwp_input_method_v1`/`zwp_input_panel_v1`; Hyprland implements neither |
+| `extra/onboard` | X11/XTEST; cannot reach native Wayland clients |
+| `extra/qt6-virtualkeyboard` | a framework, Qt apps only, and would fight `QT_IM_MODULE=fcitx` |
+| wvkbd, hyprkbd, fcitx5-osk | AUR only |
+| disabling fcitx5's `waylandim` | frees the input-method slot and gives full auto-show, but is a compromise on fcitx5 — explicitly excluded |
