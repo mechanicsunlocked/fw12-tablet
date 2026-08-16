@@ -136,10 +136,23 @@ Item {
           model: root.rows
 
           Row {
+            id: keyRow
             required property var modelData
             spacing: 0
             height: grid.rowHeight
             width: grid.width
+
+            // Normalise on the row's own width, not a fixed 60 units. Two rows
+            // do not add up to 60 -- the home row is 4 short and the bottom row
+            // 5 -- so dividing by 60 left them narrower than the rest, with the
+            // space bar smaller than it should be and dead screen on the right.
+            // Dividing by what the row actually contains makes every row fill
+            // the keyboard, and cannot be wrong for a row added later.
+            readonly property real units: {
+              var t = 0
+              for (var i = 0; i < modelData.length; i++) t += modelData[i].w
+              return t > 0 ? t : root.rowUnits
+            }
 
             Repeater {
               model: parent.modelData
@@ -154,7 +167,7 @@ Item {
                 readonly property bool active:
                   isMod && (root.mods & modelData.mod) !== 0
 
-                width: grid.width * modelData.w / root.rowUnits
+                width: grid.width * modelData.w / keyRow.units
                 height: grid.rowHeight
 
                 function fire() {
