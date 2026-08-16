@@ -11,6 +11,9 @@
 #define VK_PATH       "/org/fcitx/virtualkeyboard/impanel"
 #define VK_IFACE      "org.fcitx.Fcitx5.VirtualKeyboard1"
 
+#define FCITX_CTRL_PATH  "/controller"
+#define FCITX_CTRL_IFACE "org.fcitx.Fcitx.Controller1"
+
 #define FCITX_VK_PATH    "/virtualkeyboard"
 #define FCITX_VK_IFACE   "org.fcitx.Fcitx.VirtualKeyboard1"
 #define FCITX_BACKEND    "org.fcitx.Fcitx5.VirtualKeyboardBackend1"
@@ -22,6 +25,8 @@ struct fcitx {
     fcitx_callbacks cb;
     bool owns_name;
     bool activated; /* we asked fcitx5 to switch to virtualkeyboard mode */
+    bool vk_mode;   /* fcitx5 confirmed it, as of the last check */
+    bool warned_activate_fail;
 };
 
 /* ---- methods fcitx5 calls on us -------------------------------------- */
@@ -90,7 +95,10 @@ static int call_vk(fcitx *f, const char *method)
                                FCITX_VK_IFACE, method, &err, NULL, "");
 
     if (r < 0) {
-        log_warn("%s: %s", method, err.message ? err.message : strerror(-r));
+        /* Debug, not warn: fcitx_reconcile retries this every few seconds, so
+         * a persistent failure would otherwise fill the log. The callers warn
+         * once instead. */
+        log_dbg("%s: %s", method, err.message ? err.message : strerror(-r));
         sd_bus_error_free(&err);
         return -1;
     }
@@ -101,11 +109,17 @@ static int call_vk(fcitx *f, const char *method)
 void fcitx_activate(fcitx *f)
 {
     if (call_vk(f, "ShowVirtualKeyboard") != 0) {
+        /* Say this once. fcitx_reconcile retries on a timer, and repeating the
+         * warning every few seconds would bury whatever comes next. */
+        if (!f->warned_activate_fail) {
+            log_warn("fcitx5 did not accept ShowVirtualKeyboard; "
+                     "auto-show will not work");
+            f->warned_activate_fail = true;
+        }
         f->activated = false;
-        log_warn("fcitx5 did not accept ShowVirtualKeyboard; "
-                 "auto-show will not work");
         return;
     }
+    f->warned_activate_fail = false;
     f->activated = true;
 
     /* Tell fcitx5 a keyboard is actually there. Without this it decides there
@@ -157,6 +171,12 @@ fcitx *fcitx_open(const fcitx_callbacks *cb)
         return NULL;
     }
 
+    /* Every call we make on this bus is to fcitx5, a local process that should
+     * answer instantly. The default 25 s timeout would stall our poll loop --
+     * and with it typing and layout tracking -- if it ever stopped answering.
+     * One second is far beyond a healthy reply and short enough not to matter. */
+    sd_bus_set_method_call_timeout(f->bus, 1000000);
+
     r = sd_bus_add_object_vtable(f->bus, &f->obj_slot, VK_PATH, VK_IFACE,
                                  vk_vtable, f);
     if (r < 0) {
@@ -187,6 +207,10 @@ fcitx *fcitx_open(const fcitx_callbacks *cb)
     /* Owning the name is not enough on its own: fcitx5 only switches its UI to
      * the on-screen-keyboard backend once this is also called. */
     fcitx_activate(f);
+    /* Believe the activate we just did, so the first fcitx_reconcile() has
+     * something to compare against and does not report a recovery that never
+     * happened. */
+    f->vk_mode = f->activated;
 
     log_info("registered with fcitx5 as the virtual keyboard");
     return f;
@@ -276,6 +300,70 @@ int fcitx_send_key(fcitx *f, uint32_t keysym, uint32_t keycode,
     }
     sd_bus_error_free(&err);
     return 0;
+}
+
+/* Is fcitx5 still routing input through us?
+ *
+ * Returns 1 yes, 0 no, -1 could not ask (fcitx5 is down or not answering,
+ * which NameOwnerChanged already covers). */
+static int in_vk_mode(fcitx *f)
+{
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+    const char *ui = NULL;
+    int r, result = -1;
+
+    r = sd_bus_call_method(f->bus, FCITX_SERVICE, FCITX_CTRL_PATH,
+                           FCITX_CTRL_IFACE, "CurrentUI", &err, &reply, "");
+    if (r >= 0 && sd_bus_message_read(reply, "s", &ui) >= 0 && ui)
+        result = strcmp(ui, "virtualkeyboard") == 0 ? 1 : 0;
+
+    sd_bus_message_unref(reply);
+    sd_bus_error_free(&err);
+    return result;
+}
+
+/* fcitx5 drops out of virtual-keyboard mode on its own, and says nothing when
+ * it does: we keep the bus name, keep the exported object, and simply stop
+ * being called. Auto-show dies in a way that looks like nothing happened.
+ *
+ * There is no signal to hang this off -- org.fcitx.Fcitx.Controller1 exposes
+ * exactly one, InputMethodGroupsChanged, and CurrentUI is a method, not a
+ * property, so it does not even emit PropertiesChanged. Asking periodically is
+ * the only mechanism fcitx5 offers.
+ *
+ * Measured: with fcitx5 reverted, ShowVirtualKeyboard flips CurrentUI straight
+ * back to 'virtualkeyboard' and a show event arrives immediately, so recovery
+ * is exactly the same call we make at startup.
+ *
+ * I could not find what triggers the revert. It survived focus changes between
+ * a text field and a terminal, killing the focused client outright, and shell
+ * restarts -- all of which I tried specifically to provoke it. Reconciling
+ * against fcitx5's own answer does not depend on knowing the cause, which is
+ * why it is written this way rather than as a fix for a specific trigger. */
+void fcitx_reconcile(fcitx *f)
+{
+    int state;
+
+    if (!f)
+        return;
+
+    state = in_vk_mode(f);
+    if (state < 0)
+        return;
+
+    if (state == 1) {
+        if (!f->vk_mode)
+            log_info("fcitx5 is using the on-screen keyboard again");
+        f->vk_mode = true;
+        return;
+    }
+
+    /* Log the drop once, not every few seconds while it stays broken. */
+    if (f->vk_mode)
+        log_warn("fcitx5 stopped using the on-screen keyboard; re-registering");
+    f->vk_mode = false;
+    fcitx_activate(f);
 }
 
 int fcitx_set_visible(fcitx *f, bool visible)

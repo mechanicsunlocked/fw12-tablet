@@ -32,9 +32,27 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/signalfd.h>
+#include <time.h>
 #include <unistd.h>
 
 int fw12_debug;
+
+/* How often to confirm fcitx5 is still using us. It reverts silently and there
+ * is no signal to watch, so this interval is how long auto-show can stay dead
+ * before it repairs itself. Three seconds is short enough that a user reaching
+ * for a text field twice does not notice, and long enough that the cost is a
+ * local DBus round trip every three seconds. */
+#define FCITX_CHECK_MS 3000
+
+/* CLOCK_MONOTONIC: this must not jump when the clock is set, and the machine
+ * this runs on suspends and resumes constantly. */
+static int64_t now_ms(void)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 typedef struct {
     vkbd *kbd;
@@ -45,6 +63,8 @@ typedef struct {
     bool selftest;
     bool selftest_done;
     bool visible;
+    fcitx *fcitx;
+    int64_t last_inject;
 } app;
 
 /* Press and release one key with a modifier mask held around it. This is the
@@ -176,6 +196,7 @@ static void on_ipc_key(uint32_t code, uint32_t mods, void *user)
 {
     app *a = user;
 
+    a->last_inject = now_ms();
     tap(a->kbd, mods, code);
 }
 
@@ -201,9 +222,32 @@ static void on_show(void *user)
     }
 }
 
+/* fcitx5 hides the on-screen keyboard the moment it sees a key event, on the
+ * assumption that the user reached for the hardware keyboard. Every key we
+ * type is a key event, so without this the keyboard closed itself after each
+ * tap -- and fcitx5 left virtual-keyboard mode with it, so it took a few
+ * seconds to come back. Measured: one tap produced HideVirtualKeyboard,
+ * `activelayout>>hl-virtual-keyboard-fcitx5`, and a fallback to classicui.
+ *
+ * This is the one place a time window is the honest answer. fcitx5's hide
+ * carries no reason, and DBus replies do not arrive in step with Wayland
+ * events, so "did we cause this?" can only be answered by when it arrived.
+ * The window is short enough that a real hide -- focus leaving, which needs a
+ * tap somewhere else -- cannot fit inside it. */
+#define SELF_HIDE_MS 300
+
 static void on_hide(void *user)
 {
     app *a = user;
+
+    if (a->last_inject && now_ms() - a->last_inject < SELF_HIDE_MS) {
+        log_dbg("ignoring hide caused by our own keystroke");
+        /* fcitx5 drops out of virtual-keyboard mode along with the hide. Put
+         * it back now rather than leaving it to the periodic check, which
+         * would stop auto-show working for the next few seconds. */
+        fcitx_activate(a->fcitx);
+        return;
+    }
 
     a->visible = false;
     ipc_send(a->sock, "{\"t\":\"hide\"}\n");
@@ -355,6 +399,9 @@ int main(int argc, char **argv)
         close(sig_fd);
         return 1;
     }
+    /* on_hide needs to re-assert virtual-keyboard mode, so the callbacks need
+     * a way back to the connection that delivered them. */
+    a.fcitx = f;
 
     /* Not fatal if unavailable: without it the keyboard simply keeps the
      * layout it started with. */
@@ -370,11 +417,14 @@ int main(int argc, char **argv)
         a.sock = ipc_open(&icb);
     }
 
+    int64_t last_fcitx_check = now_ms();
+
     for (;;) {
         struct pollfd fds[6];
         int nfds = 3;
         int timeout;
         int ready;
+        int64_t now;
 
         fds[0].fd = sig_fd;
         fds[0].events = POLLIN;
@@ -411,7 +461,13 @@ int main(int argc, char **argv)
         }
 
         vkbd_flush(a.kbd);
+
+        /* Cap the wait so the fcitx5 check below runs on schedule even when
+         * nothing else is happening -- which is exactly when the revert would
+         * otherwise go unnoticed. */
         timeout = fcitx_timeout_ms(f);
+        if (timeout < 0 || timeout > FCITX_CHECK_MS)
+            timeout = FCITX_CHECK_MS;
 
         ready = poll(fds, nfds, timeout);
         if (ready < 0) {
@@ -451,6 +507,14 @@ int main(int argc, char **argv)
         if (fcitx_dispatch(f) < 0) {
             rc = 1;
             break;
+        }
+
+        /* Not once per poll wakeup: typing produces a burst of them, and this
+         * is a round trip to another process. */
+        now = now_ms();
+        if (now - last_fcitx_check >= FCITX_CHECK_MS) {
+            last_fcitx_check = now;
+            fcitx_reconcile(f);
         }
     }
 

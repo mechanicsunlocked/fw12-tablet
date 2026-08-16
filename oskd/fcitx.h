@@ -65,4 +65,8 @@ void fcitx_activate(fcitx *f);
 /* Tell fcitx5 whether our surface is actually visible. */
 int fcitx_set_visible(fcitx *f, bool visible);
 
+/* Confirm fcitx5 is still routing input through us, and re-register if it has
+ * quietly stopped. Call every few seconds; there is no signal for this. */
+void fcitx_reconcile(fcitx *f);
+
 #endif
