@@ -12,13 +12,15 @@ was already written.
 
 ## The one-paragraph version
 
-Two pieces, and neither is a general-purpose daemon. **Tablet detection and
-auto-rotation are ~200 lines of Lua** loaded into Hyprland's own config: the
-compositor already receives the `SW_TABLET_MODE` switch and can read the
-accelerometer from sysfs, so no separate process, socket, or systemd unit is
-involved. **The on-screen keyboard** is the only part needing native code,
-because it must own a DBus name to act as fcitx5's virtual-keyboard backend,
-and must draw — neither of which Lua can do.
+One piece. **Tablet detection and auto-rotation are ~200 lines of Lua** loaded
+into Hyprland's own config: the compositor already receives the
+`SW_TABLET_MODE` switch and can read the accelerometer from sysfs, so no
+separate process, socket, or systemd unit is involved. Plus a one-time root
+fix for a firmware probe race that otherwise costs the tablet switch on some
+boots.
+
+**The on-screen keyboard was built and then dropped** in favour of
+`plasma-keyboard` from the Arch `extra` repository. See below.
 
 ---
 
@@ -88,60 +90,22 @@ in a loop.
 
 ---
 
-## Component B — on-screen keyboard
+## The keyboard: dropped
 
-The only part that needs native code, for two reasons that are not going away:
+There is no keyboard here any more. It was built -- a C daemon acting as
+fcitx5's virtual-keyboard backend, injecting through
+`zwp_virtual_keyboard_v1`, plus a Quickshell panel -- and it worked in the
+sense that every individual piece could be demonstrated: auto-show on focus,
+uppercase, AltGr, dead keys, live layout following.
 
-- **Lua cannot draw.** The entire 1777-line `hl.meta.lua` API is configuration.
-  No surface, no widget, no rendering call.
-- **Quickshell cannot speak arbitrary DBus.** Its DBus use is internal and
-  wrapped into fixed services (Mpris, UPower, Notifications, Polkit…). There is
-  no generic client exposed to QML, so a plugin cannot own a bus name or export
-  an object.
+It was still bad to type on, and that is the only test that counts. Keys were
+missed, the space bar worst of all; each fix found a real defect and the thing
+underneath was still unpleasant. Replaced by `plasma-keyboard` from the Arch
+`extra` repository, which is maintained by people who do this full time.
 
-### B1. `fw12-oskd` — small C helper (sd-bus)
-
-- owns `org.fcitx.Fcitx5.VirtualKeyboard`
-- exports `/org/fcitx/virtualkeyboard/impanel` implementing
-  `org.fcitx.Fcitx5.VirtualKeyboard1`; fcitx5 calls in to show/hide — **this is
-  the auto-show source, protocol truth rather than a focus heuristic**
-- calls `ProcessKeyEvent(keysym, keycode, state, isRelease, time)` on
-  `org.fcitx.Fcitx5` `/virtualkeyboard` to type
-- derives key legends from the live xkb keymap via `libxkbcommon`, so `de` and
-  `us(intl)` both render correctly, including dead keys
-- **restores the previous fcitx5 UI on exit** — the Phase 0 probe left
-  `CurrentUI` empty when it released the name, which must not happen in
-  production
-- watches `NameOwnerChanged` so a fcitx5 restart is recovered from cleanly
-
-No root, no Wayland protocol client, no evdev.
-
-### B2. Quickshell plugin
-
-`~/.config/omarchy/plugins/drotiesel.fw12-tablet/` — `service` + `panel` +
-`bar-widget`. The keyboard is a `PanelWindow` with
-`WlrLayershell.keyboardFocus: WlrKeyboardFocus.None`, which is the
-first-party-proven answer to "must not steal focus" (the OSD uses it). Themed
-through the `qs.Commons` `Color` singleton so it follows theme switches.
-
-**Quickshell is 0.3.0 — pre-1.0, and the biggest version-churn risk in this
-design.** That is contained by construction: tablet mode and rotation are in
-Component A and do not involve Quickshell at all. A Quickshell update that
-breaks the plugin costs the on-screen keyboard and the bar widget; it does not
-cost auto-rotation.
-
----
-
-## What was removed from the earlier draft
-
-`tabletsw.c`, `accel.c`, `hypr.c`, the `poll()` loop, the inotify hotplug
-state machine, the JSON-lines Unix socket protocol, and the systemd user unit —
-all replaced by Component A. The switch hotplug problem disappeared with them,
-because Hyprland owns the device rather than us.
-
-The C→Rust question is now moot for this part: there is no C here to write.
-For Component B the same reasoning as before applies — sd-bus and libxkbcommon
-are C libraries, there is no Wayland protocol work, and the helper is small.
+The code is in git history (removed at `HEAD` of the keyboard work) if it is
+ever wanted. `FINDINGS.md` 3.x keeps the measurements, because what was learned
+about fcitx5's virtual-keyboard protocol is worth more than the code was.
 
 ---
 
@@ -162,16 +126,11 @@ switch device the binds simply never fire, and the module stays in laptop mode.
 
 ## Known limitations, stated up front
 
-- **Ghostty.** If it never activates a text input context, fcitx5 never sees
-  focus and the keyboard never auto-shows. App-side, and would affect any
-  design. The manual toggle covers it. To be measured, not assumed.
-- **fcitx5 is required** for the keyboard. Omarchy ships and runs it by
-  default; if a user disables it, auto-show is lost. Detect and say so rather
-  than failing silently.
 - **The bar is hard to hit by touch** (§5.4) — 6.9 mm targets, and a missed tap
   reaching the wallpaper opens the picker on double-click. Reported upstream;
   out of scope here by decision.
-- **One boot in N has no switch** until the initramfs fix is applied.
+- **One boot in N has no switch** until the initramfs fix is applied. Now
+  applied on this machine, after it cost a boot.
 
 ---
 
@@ -181,10 +140,6 @@ switch device the binds simply never fire, and the module stays in laptop mode.
 2. Component A: verify live on hardware (fold, four orientations, SUPER+R lock,
    `hyprctl reload` idempotency, suspend/resume).
 3. System units + initramfs fix; reboot several times to confirm the race is
-   closed.
-4. `fw12-oskd`: register with fcitx5, prove auto-show in a GTK app.
-5. Quickshell plugin: service + bar widget.
-6. Keyboard UI and the keymap/legend pipeline.
-7. Test matrix: GTK, Qt, Firefox, Ghostty; suspend/resume; shell restart;
-   layout switch `de` → `us(intl)`.
-8. Packaging: PKGBUILD, README, marketplace submission.
+   closed. **Done** — installed after the race cost a real boot.
+4. ~~On-screen keyboard~~ — built, rejected, removed. `plasma-keyboard` instead.
+5. Packaging: PKGBUILD, README, marketplace submission.
