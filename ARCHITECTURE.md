@@ -19,8 +19,9 @@ separate process, socket, or systemd unit is involved. Plus a one-time root
 fix for a firmware probe race that otherwise costs the tablet switch on some
 boots.
 
-**The on-screen keyboard was built and then dropped** in favour of
-`plasma-keyboard` from the Arch `extra` repository. See below.
+Plus **a shell plugin that is one button**: it starts `squeekboard` from the
+Arch `extra` repository and shows or hides it. The keyboard we wrote was
+dropped; see Component B.
 
 ---
 
@@ -90,22 +91,86 @@ in a loop.
 
 ---
 
-## The keyboard: dropped
+## Component B — `plugin/` (one button, no keyboard)
 
-There is no keyboard here any more. It was built -- a C daemon acting as
-fcitx5's virtual-keyboard backend, injecting through
-`zwp_virtual_keyboard_v1`, plus a Quickshell panel -- and it worked in the
-sense that every individual piece could be demonstrated: auto-show on focus,
-uppercase, AltGr, dead keys, live layout following.
+An Omarchy shell plugin, installed to
+`~/.config/omarchy/plugins/drotiesel.fw12-tablet/`. It draws a single round,
+draggable button carrying the Framework mark, and does exactly two things:
+
+* starts `squeekboard` through its own systemd user unit, `mobi.phosh.OSK`
+* calls `sm.puri.OSK0.SetVisible` on it
+
+That is the whole plugin. No keyboard code, no input handling, no protocol
+work. `squeekboard` comes from `extra`, so pacman keeps it current.
+
+### Why a button rather than automatic pop-up
+
+fcitx5 holds Hyprland's single `input-method-v2` slot. Measured, not assumed —
+Hyprland answers a second client with `unavailable` (§8.1). Any on-screen
+keyboard here is therefore blind to which text field has focus, and something
+external has to decide when it appears.
+
+The alternative was to let fcitx5 make that decision through its
+`virtualkeyboard` UI addon and forward the result. That works, and most of the
+daemon for it is in git history, but it drags back the fight from §3.1j:
+fcitx5 hides the keyboard the instant it sees a key event, and `squeekboard`'s
+keys *are* key events. A button has none of that in it.
+
+### Why the keys go in as fake hardware events
+
+`squeekboard` falls back to `zwp_virtual_keyboard_v1` when it cannot have
+`input-method-v2`. Everything typed on it therefore arrives as if typed on the
+real keyboard, which means **fcitx5 still sees it** and compose sequences keep
+working from the on-screen keyboard. The constraint turned out to be the
+feature.
+
+### The decisions that are not obvious
+
+**The window is full-screen and masked down to the button.** A layer surface
+covering the display, with `set_input_region` reduced to the button's 56×56
+rectangle — verified in the protocol trace. Everything outside it passes
+through to whatever is underneath.
+
+**Overlay layer, not top.** The moment you most want a keyboard is inside a
+fullscreen Moonlight session, and `top` sits below fullscreen windows.
+
+**Position is stored as a fraction of each axis, not in pixels.** This machine
+rotates; 1200×750 becomes 750×1200, and a pixel position would land off screen
+or under the bar. It also keeps `x` and `y` as plain bindings, so nothing has
+to reposition anything by hand after a rotation.
+
+**The drag handler moves nothing itself.** It reports how far the finger has
+travelled, and that is converted straight back into the same two fractions. A
+rotation mid-drag therefore cannot desync the button from its stored position.
+
+**It is round even under the square themes.** Everything else the shell draws
+is attached to an edge and takes its shape from the theme to match its
+neighbours. This floats in the middle of whatever you are using, with nothing
+to match.
+
+### The keyboard we wrote, and dropped
+
+It was built — a C daemon acting as fcitx5's virtual-keyboard backend,
+injecting through `zwp_virtual_keyboard_v1`, plus a Quickshell panel — and
+every individual piece could be demonstrated: auto-show on focus, uppercase,
+AltGr, dead keys, live layout following.
 
 It was still bad to type on, and that is the only test that counts. Keys were
 missed, the space bar worst of all; each fix found a real defect and the thing
-underneath was still unpleasant. Replaced by `plasma-keyboard` from the Arch
-`extra` repository, which is maintained by people who do this full time.
+underneath was still unpleasant.
 
-The code is in git history (removed at `HEAD` of the keyboard work) if it is
-ever wanted. `FINDINGS.md` 3.x keeps the measurements, because what was learned
-about fcitx5's virtual-keyboard protocol is worth more than the code was.
+The code is in git history if it is ever wanted. `FINDINGS.md` 3.x keeps the
+measurements, because what was learned about fcitx5's virtual-keyboard protocol
+is worth more than the code was.
+
+### What was tried instead, and why it is not here
+
+`stevia`, the current Phosh keyboard, is in `extra` and looked like the obvious
+answer. It cannot run on Hyprland at all: it requires eight Wayland globals and
+the eighth, `zphoc_device_state_v1`, exists only in phoc. Seven of eight are
+present here. See §8.2. `plasma-keyboard` binds `input-method-v1` /
+`input-panel-v1`, neither of which Hyprland implements. `onboard` is X11.
+`wvkbd` and `hyprkbd` are AUR-only.
 
 ---
 
@@ -141,5 +206,9 @@ switch device the binds simply never fire, and the module stays in laptop mode.
    `hyprctl reload` idempotency, suspend/resume).
 3. System units + initramfs fix; reboot several times to confirm the race is
    closed. **Done** — installed after the race cost a real boot.
-4. ~~On-screen keyboard~~ — built, rejected, removed. `plasma-keyboard` instead.
-5. Packaging: PKGBUILD, README, marketplace submission.
+4. ~~On-screen keyboard~~ — built, rejected, removed. Component B instead.
+5. Component B: verify the button on hardware (tap to toggle, drag to move,
+   position survives a shell restart and a rotation). **Partly done** — the
+   window, the mask, the process chain and the keyboard itself are verified;
+   tap and drag need a finger.
+6. Packaging: PKGBUILD, README, marketplace submission.

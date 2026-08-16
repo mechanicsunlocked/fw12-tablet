@@ -45,6 +45,13 @@ local DEAD_ZONE = math.floor(ONE_G * 2 / 5) -- 40% of 1 g to call an axis domina
 local TABLET_ANGLE = 200 -- hinge angle treated as "already folded" at load
 local SWITCH_DEV = "gpio-keys" -- as Hyprland names the SW_TABLET_MODE device
 
+-- Where the folded state is published for anything outside Hyprland to read.
+-- The shell plugin watches this to decide whether to show its keyboard button.
+-- A file rather than IPC because the reader is a Quickshell FileView, which
+-- already does inotify, and because a plain word on disk is trivial to check
+-- by hand when something looks wrong.
+local MODE_PATH = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/fw12-tablet-mode"
+
 -- ---------------------------------------------------------------------------
 -- sysfs helpers
 --
@@ -69,6 +76,13 @@ local function read_number(path)
     local v = f:read("*n")
     f:close()
     return v
+end
+
+local function write_mode(mode)
+    local f = io.open(MODE_PATH, "w")
+    if not f then return end
+    f:write(mode)
+    f:close()
 end
 
 local function find_iio(attr, want)
@@ -209,6 +223,7 @@ end
 local function enter_tablet()
     S.tablet = true
     S.pending, S.pending_n = nil, 0
+    write_mode("tablet")
     if not S.lock_bound then
         hl.bind("SUPER + R", toggle_lock, { description = "Toggle auto-rotation lock" })
         S.lock_bound = true
@@ -219,6 +234,7 @@ end
 local function leave_tablet()
     S.tablet = false
     S.pending, S.pending_n = nil, 0
+    write_mode("laptop")
     -- Unfolding clears the rotation lock.
     --
     -- The lock is for holding the device at an angle you do not want followed
@@ -260,6 +276,9 @@ hl.bind("switch:off:" .. SWITCH_DEV, leave_tablet, { locked = true })
 
 S.timer = hl.timer(tick, { timeout = POLL_MS, type = "repeat" })
 
+-- Publish a state before deciding, so a reader that starts between here and
+-- the seed below never sees a stale word from the previous Hyprland session.
+write_mode("laptop")
 if seed_initial_state() then enter_tablet() end
 
 function M.status()
