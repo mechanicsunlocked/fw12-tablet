@@ -24,8 +24,16 @@ Item {
   property bool wantVisible: false
   // The user's manual override from the bar button.
   property bool forcedVisible: false
+  // The user pushed the keyboard away while something still wanted it.
+  //
+  // Needed because a terminal counts as a text field, and on Omarchy one is
+  // almost always focused -- so fcitx5 has a standing, correct reason to keep
+  // asking for the keyboard, and without this there is no way to put it down.
+  // Cleared on the next hide, so dismissing is for the current field only and
+  // the keyboard comes back when the user moves to another one.
+  property bool dismissed: false
   // NB: not `visible` -- that is FINAL on Item and cannot be overridden.
-  readonly property bool shown: forcedVisible || wantVisible
+  readonly property bool shown: !dismissed && (forcedVisible || wantVisible)
   readonly property bool connected: link.item ? link.item.connected : false
 
   // Latched modifiers, as VKBD_* bits. `locked` survives a keypress
@@ -67,7 +75,13 @@ Item {
   }
 
   function toggleKeyboard() {
-    root.forcedVisible = !root.forcedVisible
+    if (root.shown) {
+      root.forcedVisible = false
+      root.dismissed = true
+    } else {
+      root.dismissed = false
+      root.forcedVisible = true
+    }
   }
 
   function handleLine(line) {
@@ -105,8 +119,11 @@ Item {
     interval: 300
     onTriggered: {
       root.wantVisible = false
-      // Focus really did leave; a latched Shift left behind would otherwise
-      // apply to whatever is focused next.
+      // Focus really did leave, so a dismissal has served its purpose: the
+      // next field the user taps gets a keyboard without them asking twice.
+      root.dismissed = false
+      // A latched Shift left behind would otherwise apply to whatever is
+      // focused next.
       root.clearMods()
     }
   }

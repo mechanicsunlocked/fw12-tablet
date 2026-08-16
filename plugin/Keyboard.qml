@@ -59,6 +59,37 @@ Item {
       color: Color.background
       opacity: 0.96
 
+      // Put the keyboard down without reaching for the bar. The bar is 6.9 mm
+      // tall, which is below every touch-target guideline and hard to hit by
+      // hand; this sits on the surface the user is already touching.
+      Rectangle {
+        id: dismiss
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Style.space(4)
+        width: Style.space(28)
+        height: Style.space(28)
+        radius: width / 2
+        z: 1
+        color: dismissArea.pressed
+             ? Color.muted
+             : Qt.rgba(Color.foreground.r, Color.foreground.g,
+                       Color.foreground.b, 0.10)
+
+        Text {
+          anchors.centerIn: parent
+          text: "" // Nerd Font: chevron down
+          color: Color.foreground
+          font.pixelSize: Math.round(dismiss.height * 0.5)
+        }
+
+        MouseArea {
+          id: dismissArea
+          anchors.fill: parent
+          onPressed: if (root.service) root.service.toggleKeyboard()
+        }
+      }
+
       Column {
         id: grid
         anchors.fill: parent
