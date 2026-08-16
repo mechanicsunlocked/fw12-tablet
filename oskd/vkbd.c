@@ -22,6 +22,7 @@ struct vkbd {
     char layout[64];
     char variant[64];
     char options[128];
+    uint32_t last_event_time;
 };
 
 /* Compile a keymap from rule names, or NULL if the names are not valid. */
@@ -275,9 +276,33 @@ void vkbd_set_modifiers(vkbd *v, uint32_t depressed, uint32_t locked)
     wl_display_flush(v->dpy);
 }
 
+/* A strictly increasing event time.
+ *
+ * A press and its release are sent back to back and therefore land in the same
+ * millisecond, so both carried the same timestamp -- and two quick taps of one
+ * key could collide with each other as well. A real keyboard cannot produce
+ * two events at one instant, and a client is entitled to treat that as one
+ * event or to drop it.
+ *
+ * It showed up as the space bar missing taps: the key pressed most often and
+ * fastest is the one whose events collide first.
+ *
+ * Never move backwards either. CLOCK_MONOTONIC does not jump, but this is cast
+ * to 32 bits and wraps roughly every 49 days of uptime; without the guard the
+ * wrap would send a burst of events dated in the past. */
+static uint32_t event_time(vkbd *v)
+{
+    uint32_t t = now_ms();
+
+    if (t <= v->last_event_time)
+        t = v->last_event_time + 1;
+    v->last_event_time = t;
+    return t;
+}
+
 void vkbd_key(vkbd *v, uint32_t evdev_code, bool pressed)
 {
-    zwp_virtual_keyboard_v1_key(v->kbd, now_ms(), evdev_code,
+    zwp_virtual_keyboard_v1_key(v->kbd, event_time(v), evdev_code,
                                 pressed ? WL_KEYBOARD_KEY_STATE_PRESSED
                                         : WL_KEYBOARD_KEY_STATE_RELEASED);
     wl_display_flush(v->dpy);
