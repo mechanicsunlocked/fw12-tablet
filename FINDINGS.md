@@ -774,13 +774,60 @@ concludes there is none and quietly reverts to `classicui`. We keep the bus
 name and simply stop receiving show/hide. Nothing looks wrong from our side.
 
 Confirmed it is a revert and not a crash: fcitx5's pid was unchanged across it
-(1398 before and after), and `hl-virtual-keyboard-fcitx5` reappeared on the
-seat, which fcitx5 only creates when it is *not* in virtual-keyboard mode --
-a useful tell when debugging this.
+(1398 before and after).
+
+**Correction: `hl-virtual-keyboard-fcitx5` on the seat is not a tell.** An
+earlier version of this section offered it as one. It is wrong. That device was
+present on the seat at the same moment the keyboard was up, working, and
+receiving show events. Ignore it.
 
 **fcitx5 restarting also drops the mode**, while we keep the name it watches.
 A new instance has no idea we are its keyboard. The daemon now watches
 `NameOwnerChanged` for `org.fcitx.Fcitx5` and re-asserts.
+
+### 3.1j What actually makes fcitx5 leave virtual-keyboard mode
+
+`CurrentUI` is the reliable check, and the only one. Note it is a **method** on
+`org.fcitx.Fcitx.Controller1`, not a property -- reading it through
+`org.freedesktop.DBus.Properties.Get` fails with `UnknownProperty`, which is
+easy to misread as fcitx5 being broken:
+
+    gdbus call --session --dest org.fcitx.Fcitx5 --object-path /controller \
+      --method org.fcitx.Fcitx.Controller1.CurrentUI
+
+**The trigger is our own typing.** fcitx5 hides the on-screen keyboard as soon
+as it sees a key event, on the assumption that the user has reached for the
+hardware keyboard -- and leaves virtual-keyboard mode along with it. Every key
+we inject is a key event, so the keyboard closed itself after every single tap.
+One tap produced, in order:
+
+    fcitx5 -> HideVirtualKeyboard
+    activelayout>>hl-virtual-keyboard-fcitx5,German
+    CurrentUI: classicui
+
+Things that do **not** trigger it, each tried specifically to provoke it:
+focus moving between a text field and a terminal, killing the focused client
+outright, `omarchy-restart-shell` (25 samples, all `virtualkeyboard`),
+`ReloadConfig`, and `HideVirtualKeyboard`.
+
+Two fixes, because they cover different failures:
+
+- The daemon ignores a hide arriving within 300 ms of its own injection and
+  re-asserts immediately. This is the only place a time window is the honest
+  answer: fcitx5's hide carries no reason, and DBus replies do not arrive in
+  step with Wayland events, so "did we cause this?" can only be answered by
+  when it arrived. A real hide needs a tap elsewhere and cannot fit in 300 ms.
+- The daemon re-checks `CurrentUI` every 3 s and re-registers if it has been
+  dropped, which covers causes I have not found. There is no signal to hang
+  this off: `org.fcitx.Fcitx.Controller1` exposes exactly one,
+  `InputMethodGroupsChanged`, and since `CurrentUI` is a method it does not
+  emit `PropertiesChanged` either. Polling is the only mechanism offered.
+
+Recovery is the same call as startup: with fcitx5 reverted,
+`ShowVirtualKeyboard` flips `CurrentUI` straight back and a show arrives
+immediately. Verified against a real revert -- restarting fcitx5 produced
+`fcitx5 stopped using the on-screen keyboard; re-registering` followed by
+working show/hide.
 
 ### 3.1i Quickshell notes from building the plugin
 
@@ -793,10 +840,22 @@ A new instance has no idea we are its keyboard. The daemon now watches
   standalone. Qt caches compiled components by URL, and `rescanPlugins` does not
   clear that cache. `omarchy-restart-shell` does. Worth knowing before spending
   time on a fix that is already correct.
-- **Re-assigning `Socket.connected = true` does not retry a failed
-  connection.** After the daemon restarted, the shell logged `PeerClosedError`
-  then `ServerNotFoundError` and stopped trying. Clearing `path` first tears the
-  socket down so the next assignment builds a fresh one.
+- **A failed `Socket` cannot be revived by setting its properties again.** This
+  is what kept the keyboard from appearing at all, and it hid behind the fcitx5
+  investigation for a whole session. After the daemon restarted, the shell
+  logged `PeerClosedError`, then `ServerNotFoundError`, then nothing. A 2 s
+  retry that set `connected = false`, cleared `path`, restored it and set
+  `connected = true` never reconnected -- measured over 8 s with the daemon up
+  and listening. The Socket keeps the failed state internally and re-assigning
+  the same values is a no-op it never acts on. The fix is to put the Socket in
+  a `Loader` and toggle `active` false/true, which destroys the object and
+  builds a fresh one. Reconnect then takes ~4 s, and the daemon logs
+  `shell connected`.
+- **Silence is the failure mode on both sides.** A daemon that is not running
+  looks exactly like one that is running with nothing to say, and the panel
+  hides itself when `rows` is empty, so a broken link renders as a keyboard
+  that simply never appears. One log line per connect/disconnect transition,
+  and one per show/hide, is what made this findable at all.
 - **fcitx5's show/hide churn is visible as flicker.** The keyboard appeared and
   vanished as focus moved, exactly as the §3.1a capture predicted. A 300 ms
   debounce on hide -- cancelled by any show -- fixes it.
