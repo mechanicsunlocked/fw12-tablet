@@ -190,15 +190,48 @@ end
 -- ---------------------------------------------------------------------------
 -- Mode transitions
 -- ---------------------------------------------------------------------------
+
+-- Rotation lock. SUPER+R is free in Omarchy (the existing R binds are all
+-- SUPER+CTRL variants).
+--
+-- Bound only while folded. It has no meaning in laptop mode, where nothing
+-- rotates anyway, so leaving it live there just means an accidental press can
+-- arm a setting that does nothing now and breaks rotation later.
+local function toggle_lock()
+    S.locked = not S.locked
+    hl.notification.create({
+        text = S.locked and "Rotation locked" or "Rotation unlocked",
+        timeout = 1500,
+    })
+    if not S.locked then tick() end
+end
+
 local function enter_tablet()
     S.tablet = true
     S.pending, S.pending_n = nil, 0
+    if not S.lock_bound then
+        hl.bind("SUPER + R", toggle_lock, { description = "Toggle auto-rotation lock" })
+        S.lock_bound = true
+    end
     tick() -- catch up to however the device is being held right now
 end
 
 local function leave_tablet()
     S.tablet = false
     S.pending, S.pending_n = nil, 0
+    -- Unfolding clears the rotation lock.
+    --
+    -- The lock is for holding the device at an angle you do not want followed
+    -- -- reading in bed, mostly -- which is a thing that ends when you fold it
+    -- back into a laptop. Carrying it forward meant it could sit on silently
+    -- for days: nothing shows it is set, and the symptom is auto-rotation
+    -- simply not working, which looks exactly like a bug in the sensor path.
+    -- That happened, and it cost an evening looking in the wrong place.
+    S.locked = false
+    if S.lock_bound then
+        hl.unbind("SUPER + R")
+        S.lock_bound = false
+    end
     if S.applied ~= 0 then apply(0) end
 end
 
@@ -218,22 +251,12 @@ end
 -- Wire up
 -- ---------------------------------------------------------------------------
 S.locked = false
+S.lock_bound = false
 S.applied = 0
 S.pending, S.pending_n = nil, 0
 
 hl.bind("switch:on:" .. SWITCH_DEV, enter_tablet, { locked = true })
 hl.bind("switch:off:" .. SWITCH_DEV, leave_tablet, { locked = true })
-
--- Rotation lock. SUPER+R is free in Omarchy (the existing R binds are all
--- SUPER+CTRL variants).
-hl.bind("SUPER + R", function()
-    S.locked = not S.locked
-    hl.notification.create({
-        text = S.locked and "Rotation locked" or "Rotation unlocked",
-        timeout = 1500,
-    })
-    if not S.locked then tick() end
-end, { description = "Toggle auto-rotation lock" })
 
 S.timer = hl.timer(tick, { timeout = POLL_MS, type = "repeat" })
 
@@ -246,6 +269,17 @@ function M.status()
         applied = S.applied,
         accel = S.accel,
     }
+end
+
+-- Clear the lock without a config reload.
+--
+-- Added because diagnosing a stuck lock ended with `hyprctl reload` as the
+-- only way out, which throws away the whole Lua state to change one boolean.
+--
+--   hyprctl eval 'require("hypr.fw12-tablet").set_locked(false)'
+function M.set_locked(v)
+    S.locked = v and true or false
+    if not S.locked then tick() end
 end
 
 return M
