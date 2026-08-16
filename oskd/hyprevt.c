@@ -1,6 +1,7 @@
 #include "hyprevt.h"
 #include "log.h"
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -72,16 +73,38 @@ void hyprevt_close(hyprevt *h)
 
 int hyprevt_fd(hyprevt *h) { return h ? h->fd : -1; }
 
+/* Is this activelayout event about a keyboard a person is typing on?
+ *
+ * The payload is "activelayout>>DEVICE,LAYOUTNAME". Hyprland emits one for
+ * every keyboard including the virtual ones -- ours and fcitx5's -- so typing
+ * a single character produced two of these. Each one made the daemon re-read
+ * three settings from Hyprland over its command socket, six blocking round
+ * trips per keystroke, on the same loop that has to read the next keypress.
+ * The result was a keyboard where pressing one key made the next one miss.
+ *
+ * A virtual keyboard cannot have its layout changed by a user, so an event
+ * about one is never news. */
+static bool is_real_keyboard(const char *data)
+{
+    return strncmp(data, "hl-virtual-keyboard", 19) != 0;
+}
+
 static void handle_line(hyprevt *h, const char *line)
 {
     /* Lines are "event>>data". We only care that a layout may have moved,
      * not what it moved to -- the authoritative value is re-queried. */
-    if (strncmp(line, "activelayout>>", 14) == 0 ||
-        strncmp(line, "configreloaded>>", 16) == 0) {
-        log_dbg("hyprland event: %s", line);
-        if (h->on_change)
-            h->on_change(h->user);
+    if (strncmp(line, "activelayout>>", 14) == 0) {
+        if (!is_real_keyboard(line + 14)) {
+            log_dbg("ignoring layout event for a virtual keyboard: %s", line);
+            return;
+        }
+    } else if (strncmp(line, "configreloaded>>", 16) != 0) {
+        return;
     }
+
+    log_dbg("hyprland event: %s", line);
+    if (h->on_change)
+        h->on_change(h->user);
 }
 
 int hyprevt_dispatch(hyprevt *h)
