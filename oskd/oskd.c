@@ -242,16 +242,25 @@ static void on_hide(void *user)
 
     if (a->last_inject && now_ms() - a->last_inject < SELF_HIDE_MS) {
         log_dbg("ignoring hide caused by our own keystroke");
-        /* fcitx5 drops out of virtual-keyboard mode along with the hide. Put
-         * it back now rather than leaving it to the periodic check, which
-         * would stop auto-show working for the next few seconds. */
-        fcitx_activate(a->fcitx);
+        /* Say we are still here, but do NOT re-register: registering means
+         * ShowVirtualKeyboard, fcitx5 echoes a show back, and inside this
+         * 300 ms window that show can produce another hide. It did -- one
+         * session logged 249 shows against 26 hides. This call carries no
+         * such echo. */
+        fcitx_set_visible(a->fcitx, true);
         return;
     }
 
     a->visible = false;
     ipc_send(a->sock, "{\"t\":\"hide\"}\n");
     log_info("hide");
+}
+
+static bool on_screen(void *user)
+{
+    const app *a = user;
+
+    return a->visible;
 }
 
 static void on_im_changed(const char *name, void *user)
@@ -322,6 +331,7 @@ int main(int argc, char **argv)
         .on_show = on_show,
         .on_hide = on_hide,
         .on_im_changed = on_im_changed,
+        .on_screen = on_screen,
         .user = &a,
     };
     fcitx *f;

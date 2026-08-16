@@ -27,6 +27,7 @@ struct fcitx {
     bool activated; /* we asked fcitx5 to switch to virtualkeyboard mode */
     bool vk_mode;   /* fcitx5 confirmed it, as of the last check */
     bool warned_activate_fail;
+    bool swallow_next_show;
 };
 
 /* ---- methods fcitx5 calls on us -------------------------------------- */
@@ -36,6 +37,16 @@ static int m_show(sd_bus_message *m, void *userdata, sd_bus_error *e)
     fcitx *f = userdata;
 
     log_dbg("fcitx5 -> ShowVirtualKeyboard");
+
+    /* Our own registration echoing back. Forwarding it would put the keyboard
+     * on screen because the daemon re-registered, not because the user
+     * touched anything. See fcitx_register(). */
+    if (f->swallow_next_show) {
+        f->swallow_next_show = false;
+        log_dbg("  (echo of our own registration, ignored)");
+        return sd_bus_reply_method_return(m, "");
+    }
+
     if (f->cb.on_show)
         f->cb.on_show(f->cb.user);
     return sd_bus_reply_method_return(m, "");
@@ -106,9 +117,22 @@ static int call_vk(fcitx *f, const char *method)
     return 0;
 }
 
-void fcitx_activate(fcitx *f)
+/* Tell fcitx5 we are its keyboard.
+ *
+ * `on_screen` is whether the keyboard is actually up. It matters because
+ * fcitx5 has no separate "register" call: ShowVirtualKeyboard means both "you
+ * are the keyboard" and "show yourself", and fcitx5 answers by calling
+ * ShowVirtualKeyboard back on us. Registering while nothing is focused would
+ * therefore put the keyboard on screen for no reason -- which it did, 249
+ * shows against 26 hides in one session, because the periodic check
+ * re-registered every 3 s and every registration echoed a show. When we are
+ * not on screen, that one echo is dropped. */
+void fcitx_register(fcitx *f, bool on_screen)
 {
+    f->swallow_next_show = !on_screen;
+
     if (call_vk(f, "ShowVirtualKeyboard") != 0) {
+        f->swallow_next_show = false;
         /* Say this once. fcitx_reconcile retries on a timer, and repeating the
          * warning every few seconds would bury whatever comes next. */
         if (!f->warned_activate_fail) {
@@ -122,11 +146,12 @@ void fcitx_activate(fcitx *f)
     f->warned_activate_fail = false;
     f->activated = true;
 
-    /* Tell fcitx5 a keyboard is actually there. Without this it decides there
-     * is none and quietly reverts CurrentUI to classicui -- we keep the bus
-     * name and simply stop receiving show/hide, so nothing looks broken from
-     * here. Measured: fcitx5's pid was unchanged across the revert, so this is
-     * a state it drops into, not a restart. */
+    /* Always true, whatever is on screen. Read literally this is a lie, but
+     * what fcitx5 does with it is decide whether a keyboard exists at all:
+     * report false and it concludes there is none and reverts CurrentUI to
+     * classicui, at which point it stops sending the show events we need to
+     * know when to appear. "A keyboard is available" is the useful meaning,
+     * and that is always true while the daemon is running. */
     fcitx_set_visible(f, true);
 }
 
@@ -146,7 +171,7 @@ static int on_name_owner_changed(sd_bus_message *m, void *userdata,
 
     if (new_owner && *new_owner) {
         log_info("fcitx5 restarted; re-registering as the virtual keyboard");
-        fcitx_activate(f);
+        fcitx_register(f, f->cb.on_screen && f->cb.on_screen(f->cb.user));
     } else {
         log_warn("fcitx5 went away; auto-show is paused until it returns");
         f->activated = false;
@@ -206,8 +231,9 @@ fcitx *fcitx_open(const fcitx_callbacks *cb)
 
     /* Owning the name is not enough on its own: fcitx5 only switches its UI to
      * the on-screen-keyboard backend once this is also called. */
-    fcitx_activate(f);
-    /* Believe the activate we just did, so the first fcitx_reconcile() has
+    /* Nothing is on screen yet: the shell has not even connected. */
+    fcitx_register(f, false);
+    /* Believe the registration we just did, so the first fcitx_reconcile() has
      * something to compare against and does not report a recovery that never
      * happened. */
     f->vk_mode = f->activated;
@@ -348,6 +374,11 @@ void fcitx_reconcile(fcitx *f)
     if (!f)
         return;
 
+    /* Bound how long a swallow can sit unused. fcitx5 has always echoed our
+     * registration, but if it ever did not, a stale flag would eat the next
+     * real show instead -- and that show is the user tapping a text field. */
+    f->swallow_next_show = false;
+
     state = in_vk_mode(f);
     if (state < 0)
         return;
@@ -363,7 +394,7 @@ void fcitx_reconcile(fcitx *f)
     if (f->vk_mode)
         log_warn("fcitx5 stopped using the on-screen keyboard; re-registering");
     f->vk_mode = false;
-    fcitx_activate(f);
+    fcitx_register(f, f->cb.on_screen && f->cb.on_screen(f->cb.user));
 }
 
 int fcitx_set_visible(fcitx *f, bool visible)

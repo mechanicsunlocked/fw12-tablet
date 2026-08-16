@@ -28,6 +28,9 @@ typedef struct {
     /* Active input method changed, e.g. "keyboard-us" -> "keyboard-de".
      * Used to re-derive the on-screen legends. */
     void (*on_im_changed)(const char *im_name, void *user);
+    /* Is the keyboard on screen right now? Asked before re-registering, so a
+     * re-registration does not put it there. */
+    bool (*on_screen)(void *user);
     void *user;
 } fcitx_callbacks;
 
@@ -59,8 +62,12 @@ int fcitx_send_key(fcitx *f, uint32_t keysym, uint32_t keycode,
 
 /* Ask fcitx5 to switch to virtual-keyboard mode. Called at startup and again
  * whenever fcitx5 restarts -- a new instance does not know we are its keyboard
- * even though we still hold the bus name it watches. */
-void fcitx_activate(fcitx *f);
+ * even though we still hold the bus name it watches.
+ *
+ * `on_screen` must say whether the keyboard is currently visible: fcitx5 has
+ * no registration call that does not also mean "show yourself", so when it is
+ * false the resulting show is dropped rather than forwarded. */
+void fcitx_register(fcitx *f, bool on_screen);
 
 /* Tell fcitx5 whether our surface is actually visible. */
 int fcitx_set_visible(fcitx *f, bool visible);
