@@ -71,16 +71,37 @@ Item {
         height: Style.space(28)
         radius: width / 2
         z: 1
+        // Deliberately higher contrast than a key. This is the only way off
+        // the screen, so it has to read as a control at a glance.
         color: dismissArea.pressed
-             ? Color.muted
+             ? Color.accent
              : Qt.rgba(Color.foreground.r, Color.foreground.g,
-                       Color.foreground.b, 0.10)
+                       Color.foreground.b, 0.22)
 
-        Text {
+        // Drawn, not written. The first version used a Nerd Font glyph, which
+        // silently became an empty string -- so the button existed, occupied
+        // space, and showed nothing. Two rotated bars cannot fail that way and
+        // do not depend on which font the theme picked.
+        Item {
           anchors.centerIn: parent
-          text: "" // Nerd Font: chevron down
-          color: Color.foreground
-          font.pixelSize: Math.round(dismiss.height * 0.5)
+          width: Math.round(dismiss.width * 0.42)
+          height: width
+
+          Repeater {
+            model: [-45, 45]
+            Rectangle {
+              required property int modelData
+              width: parent.width * 0.72
+              height: Math.max(2, Math.round(dismiss.height * 0.08))
+              radius: height / 2
+              color: dismissArea.pressed ? Color.background : Color.foreground
+              // Two short bars meeting in the middle: a chevron pointing down,
+              // i.e. "put this away".
+              x: modelData < 0 ? 0 : parent.width - width
+              y: (parent.height - height) / 2
+              rotation: modelData
+            }
+          }
         }
 
         MouseArea {

@@ -14,8 +14,13 @@ WidgetButton {
   readonly property bool daemonUp: service ? service.connected : false
   readonly property bool kbShown: service ? service.shown : false
 
-  // Nerd Font glyphs: keyboard, and a slashed keyboard when the daemon is down.
-  text: daemonUp ? "" : ""
+  // Nerd Font: keyboard, and a slashed keyboard when the daemon is down.
+  //
+  // Written as escapes, which is what the rest of the shell does and now
+  // clearly why: the literal glyphs did not survive being written to the file
+  // and became empty strings, so this button was invisible on the bar for the
+  // whole time it was installed. An escape either renders or shows a box.
+  text: daemonUp ? "" : ""
   active: kbShown
   dimmed: !daemonUp
 

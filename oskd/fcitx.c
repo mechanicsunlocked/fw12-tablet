@@ -397,19 +397,40 @@ void fcitx_reconcile(fcitx *f)
     fcitx_register(f, f->cb.on_screen && f->cb.on_screen(f->cb.user));
 }
 
+/* Sent without waiting for a reply, because this sits in the typing path.
+ *
+ * fcitx5 hides the keyboard on every key it sees, so every keystroke produced
+ * a hide, and answering that hide with a blocking call meant a full round trip
+ * to another process between one keypress and the next -- from inside a DBus
+ * message handler at that. Every key felt slow, and the space bar, pressed
+ * fastest, felt worst.
+ *
+ * Nothing here reads the reply, and there is nothing useful to do if it fails:
+ * the periodic check in fcitx_reconcile() notices a lost registration anyway.
+ * So do not ask for one. */
 int fcitx_set_visible(fcitx *f, bool visible)
 {
-    sd_bus_error err = SD_BUS_ERROR_NULL;
-    int r = sd_bus_call_method(f->bus, FCITX_SERVICE, FCITX_VK_PATH,
-                               FCITX_BACKEND, "ProcessVisibilityEvent", &err,
-                               NULL, "b", (int)visible);
+    sd_bus_message *m = NULL;
+    int r;
 
+    r = sd_bus_message_new_method_call(f->bus, &m, FCITX_SERVICE, FCITX_VK_PATH,
+                                       FCITX_BACKEND, "ProcessVisibilityEvent");
+    if (r < 0)
+        goto out;
+    r = sd_bus_message_append(m, "b", (int)visible);
+    if (r < 0)
+        goto out;
+    r = sd_bus_message_set_expect_reply(m, 0);
+    if (r < 0)
+        goto out;
+
+    r = sd_bus_send(f->bus, m, NULL);
+
+out:
+    sd_bus_message_unref(m);
     if (r < 0) {
-        log_warn("ProcessVisibilityEvent: %s",
-                 err.message ? err.message : strerror(-r));
-        sd_bus_error_free(&err);
+        log_dbg("ProcessVisibilityEvent: %s", strerror(-r));
         return -1;
     }
-    sd_bus_error_free(&err);
     return 0;
 }
