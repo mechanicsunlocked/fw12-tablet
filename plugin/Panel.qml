@@ -1,4 +1,4 @@
-// A draggable button that shows and hides squeekboard.
+// A draggable button that shows and hides the on-screen keyboard.
 //
 // Why a button and not automatic pop-up: fcitx5 holds Hyprland's single
 // input-method-v2 slot (measured -- Hyprland answers a second client with
@@ -7,9 +7,16 @@
 // button the user moves where they want is the version with nothing in it to
 // go wrong. fcitx5 is not touched, stopped, or reconfigured.
 //
-// The keyboard itself is squeekboard from `extra`. It types by emitting
-// ordinary key events, so fcitx5 still sees everything typed on it and compose
-// sequences keep working.
+// The keyboard is `fw12-oskbd` (see ../osk/). It uploads the system's own xkb
+// keymap, so its keys arrive with the same keycodes as the built-in keyboard's
+// and Hyprland matches binds against them without any special configuration --
+// SUPER+K from the on-screen Framework key does what it does from the real
+// one. It is also why AltGr and dead keys work, which is what an international
+// layout needs.
+//
+// Showing and hiding it is just running and not running it: the binary is
+// 38 KB and starts instantly, so there is no daemon to keep alive, no DBus
+// call to get wrong, and nothing left behind when the shell exits.
 
 import QtQuick
 import QtQuick.Shapes
@@ -84,74 +91,77 @@ Item {
     }
 
     // -----------------------------------------------------------------------
-    // Keyboard state
+    // Keyboard
+    //
+    // The keyboard is shown exactly when its process is running, so there is
+    // one piece of state and it is the true one: no flag that can disagree
+    // with reality if the keyboard dies, and nothing to reconcile after a
+    // failed call. If it crashes, the button goes dim and the next tap starts
+    // it again.
     // -----------------------------------------------------------------------
-    property bool keyboardShown: false
-
-    // `wanted` is what the keyboard should be doing; `inFlight` is what we are
-    // in the middle of telling it. Keeping them apart means a second tap
-    // during the round trip is honoured rather than dropped.
-    property int wanted: 0 // 1 show, 0 hide
-    property int inFlight: -1 // -1 when idle
+    readonly property bool keyboardShown: keyboard.running
 
     function requestKeyboard(on) {
-        root.keyboardShown = on;
-        root.wanted = on ? 1 : 0;
-        if (root.inFlight < 0)
-            root.step();
+        keyboard.running = on;
     }
 
-    function step() {
-        root.inFlight = root.wanted;
-        ensureProc.running = true;
+    // The layout is read from Hyprland rather than configured here, so the
+    // on-screen keyboard is whatever the real keyboard is -- change
+    // `input:kb_layout` and this follows, with no second copy to update.
+    // `hyprctl getoption` answers as two lines, `str: <value>` and `set: ...`.
+    property string kbLayout: ""
+    property string kbVariant: ""
+
+    function readOption(line, setter) {
+        var s = String(line);
+        if (s.indexOf("str:") !== 0)
+            return;
+        // A multi-layout setting like "de,us" starts in the first one.
+        setter(s.substring(4).trim().split(",")[0]);
     }
 
-    function finish() {
-        var done = root.inFlight;
-        root.inFlight = -1;
-        // A tap landed while the last one was still being applied.
-        if (root.wanted !== done)
-            root.step();
-    }
-
-    // Every change goes through `systemctl start` first. On a unit that is
-    // already up that returns immediately, and because squeekboard's unit is
-    // Type=dbus systemd does not return until sm.puri.OSK0 is actually on the
-    // bus -- which is exactly the ordering the busctl call below needs. No
-    // sleeps and no polling: the dependency is expressed, not waited out.
     Process {
-        id: ensureProc
-
-        command: ["systemctl", "--user", "start", "mobi.phosh.OSK"]
-
-        onExited: function (exitCode) {
-            if (exitCode !== 0) {
-                console.warn("fw12-tablet: could not start squeekboard (mobi.phosh.OSK), exit " + exitCode);
-                root.finish();
-                return;
+        command: ["hyprctl", "getoption", "input:kb_layout"]
+        running: true
+        stdout: SplitParser {
+            onRead: function (line) {
+                root.readOption(line, function (v) {
+                    root.kbLayout = v;
+                });
             }
-            visibleProc.command = ["busctl", "call", "--user", "sm.puri.OSK0", "/sm/puri/OSK0", "sm.puri.OSK0", "SetVisible", "b", root.inFlight === 1 ? "true" : "false"];
-            visibleProc.running = true;
         }
     }
 
     Process {
-        id: visibleProc
+        command: ["hyprctl", "getoption", "input:kb_variant"]
+        running: true
+        stdout: SplitParser {
+            onRead: function (line) {
+                root.readOption(line, function (v) {
+                    root.kbVariant = v;
+                });
+            }
+        }
+    }
+
+    Process {
+        id: keyboard
+
+        // Positional, and oskbd wants all three: layout, variant, options.
+        command: ["fw12-oskbd", root.kbLayout || "us", root.kbVariant, ""]
+        running: false
 
         onExited: function (exitCode) {
             if (exitCode !== 0)
-                console.warn("fw12-tablet: SetVisible failed, exit " + exitCode);
-            root.finish();
+                console.warn("fw12-tablet: fw12-oskbd exited " + exitCode);
         }
     }
 
     // Unfolding back into a laptop puts the keyboard away. Leaving it up would
-    // strand a 200 px exclusive zone at the bottom of the screen with no
-    // button left on screen to dismiss it.
+    // strand its exclusive zone at the bottom of the screen with no button
+    // left on screen to dismiss it.
     onShowButtonChanged: {
-        if (showButton)
-            ensureProc.running = true;
-        else if (keyboardShown)
+        if (!showButton)
             requestKeyboard(false);
     }
 

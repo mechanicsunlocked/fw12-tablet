@@ -7,8 +7,13 @@ Two halves, both small:
 * **`lua/fw12-tablet.lua`** — tablet detection and auto-rotation, loaded
   straight into Hyprland's Lua config. Screen, touch and stylus rotate
   together. No daemon.
+* **`osk/`** — `fw12-oskbd`, a GTK4 layer-shell keyboard laid out like the
+  Framework Laptop 12's own: function row under Fn, real Ctrl / Alt / AltGr,
+  the Framework key as Super, and a proper arrow cluster. It uploads the
+  system's xkb keymap, so it types and triggers keybinds exactly as the
+  built-in keyboard does.
 * **`plugin/`** — an Omarchy shell plugin: one round, draggable button that
-  shows and hides `squeekboard`. No keyboard code of its own.
+  shows and hides the keyboard.
 
 `fcitx5` is not touched, stopped, or reconfigured by any of this.
 
@@ -34,11 +39,21 @@ require("hypr.fw12-tablet")
 `SUPER + R` locks and unlocks auto-rotation while folded. The lock clears when
 you unfold.
 
-### 2. Keyboard button
+### 2. Keyboard
+
+Needs `gtk4`, `gtk4-layer-shell`, `libxkbcommon` and `wayland` — all in
+`extra`. Installs into `~/.local`, no root:
 
 ```bash
-sudo pacman -S squeekboard
+make -C osk
+make -C osk install
+```
 
+`make -C osk install PREFIX=/usr` as root puts it in the usual place instead.
+
+### 3. Keyboard button
+
+```bash
 mkdir -p ~/.config/omarchy/plugins/drotiesel.fw12-tablet
 cp plugin/manifest.json plugin/Panel.qml ~/.config/omarchy/plugins/drotiesel.fw12-tablet/
 
@@ -51,7 +66,7 @@ The restart is not optional the first time. Enabling a third-party panel
 plugin hot does mount it, but a later `rescanPlugins` leaves it unmounted
 until the shell is restarted.
 
-### 3. Boot fix (optional, root)
+### 4. Boot fix (optional, root)
 
 ```bash
 sudo system/install.sh
@@ -77,17 +92,24 @@ Unfolding puts the keyboard away and takes the button with it.
 
 Set `tabletOnly` to `false` at the top of `Panel.qml`.
 
-### Choosing a keyboard layout
+### Keyboard layout
 
-`squeekboard` follows `org.gnome.desktop.input-sources`, which is unset on a
-fresh Omarchy install and gives you a US layout. For German:
+There is nothing to set. The keyboard reads `input:kb_layout` and
+`input:kb_variant` from Hyprland and takes its keymap and its key legends from
+there, so it is always the same layout as the physical keyboard. Change
+Hyprland and it follows. For US International:
 
-```bash
-gsettings set org.gnome.desktop.input-sources sources "[('xkb','de')]"
+```
+input {
+    kb_layout = us
+    kb_variant = intl
+}
 ```
 
-It also ships `terminal/us` and `terminal/de` layouts, with Ctrl, Esc, Tab and
-arrows.
+Because it uploads the real keymap rather than inventing one, AltGr and dead
+keys work on it exactly as they do on the built-in keyboard — `AltGr` then `'`
+then `e` gives `é`. Hold `Fn` for F1–F12 on the number row. Tap a modifier once
+for one-shot, twice to lock it.
 
 ---
 
@@ -95,7 +117,7 @@ arrows.
 
 ```bash
 cat "$XDG_RUNTIME_DIR/fw12-tablet-mode"      # tablet | laptop
-systemctl --user status mobi.phosh.OSK       # the keyboard
+pgrep -x fw12-oskbd                          # is the keyboard up
 hyprctl layers | grep -E 'osk|fw12'          # what is on screen
 hyprctl eval 'require("hypr.fw12-tablet").status()'
 ```

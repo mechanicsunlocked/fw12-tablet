@@ -19,9 +19,9 @@ separate process, socket, or systemd unit is involved. Plus a one-time root
 fix for a firmware probe race that otherwise costs the tablet switch on some
 boots.
 
-Plus **a shell plugin that is one button**: it starts `squeekboard` from the
-Arch `extra` repository and shows or hides it. The keyboard we wrote was
-dropped; see Component B.
+Plus **the keyboard**: `fw12-oskbd`, a GTK4 layer-shell board laid out like the
+machine's own, and a shell plugin that is one draggable button to show and
+hide it. See Component B.
 
 ---
 
@@ -91,17 +91,18 @@ in a loop.
 
 ---
 
-## Component B — `plugin/` (one button, no keyboard)
+## Component B — `osk/` and `plugin/` (the keyboard, and the button)
 
-An Omarchy shell plugin, installed to
+`osk/fw12-oskbd` is a GTK4 layer-shell keyboard laid out like the Framework
+Laptop 12's own board: function row under `Fn`, real Ctrl / Alt / AltGr, the
+Framework key as Super, and a faithful arrow cluster. It was written for
+[`fw12tab`](https://github.com/mechanicsunlocked/fw12tab) and is vendored here
+(same author, same MIT licence).
+
+`plugin/` is an Omarchy shell plugin installed to
 `~/.config/omarchy/plugins/drotiesel.fw12-tablet/`. It draws a single round,
-draggable button carrying the Framework mark, and does exactly two things:
-
-* starts `squeekboard` through its own systemd user unit, `mobi.phosh.OSK`
-* calls `sm.puri.OSK0.SetVisible` on it
-
-That is the whole plugin. No keyboard code, no input handling, no protocol
-work. `squeekboard` comes from `extra`, so pacman keeps it current.
+draggable button carrying the Framework mark, and runs or does not run the
+keyboard.
 
 ### Why a button rather than automatic pop-up
 
@@ -116,13 +117,33 @@ daemon for it is in git history, but it drags back the fight from §3.1j:
 fcitx5 hides the keyboard the instant it sees a key event, and `squeekboard`'s
 keys *are* key events. A button has none of that in it.
 
-### Why the keys go in as fake hardware events
+### Why it uploads the system keymap instead of inventing one
 
-`squeekboard` falls back to `zwp_virtual_keyboard_v1` when it cannot have
-`input-method-v2`. Everything typed on it therefore arrives as if typed on the
-real keyboard, which means **fcitx5 still sees it** and compose sequences keep
-working from the on-screen keyboard. The constraint turned out to be the
-feature.
+This is the decision the whole component turns on, and three things fall out of
+it (measured, §9):
+
+**Keybinds work as shipped.** Hyprland matches binds by *keycode* unless
+`input:resolve_binds_by_sym` is on, and it is off by default. A keyboard that
+brings its own keymap brings its own keycodes, so none of them match and not a
+single bind fires — verified with `wtype`, where even an unmodified `F9` bind
+did nothing until the option was turned on. `fw12-oskbd` sends real evdev codes
+against the real keymap, so SUPER+K from the on-screen Framework key does what
+it does from the physical one, and bind behaviour on the physical keyboard is
+not altered to achieve it.
+
+**AltGr and dead keys behave.** Because the keymap is the real one, `AltGr ' e`
+gives `é` on screen exactly as it does on the hardware. This is what an
+international layout actually needs, and it is not something a keyboard with a
+synthesised keymap can fake.
+
+**There is one copy of the layout.** Key legends are read back out of the
+keymap at runtime, so `input:kb_layout` is the only place the layout is
+configured. With `kb_layout = de` the same binary comes up with ü ö ä ß, y/z
+swapped and Strg on the modifier caps.
+
+**fcitx5 is untouched throughout.** The keys arrive as ordinary hardware
+events, so fcitx5 sees everything typed on screen and compose sequences keep
+working.
 
 ### The decisions that are not obvious
 
@@ -165,12 +186,19 @@ is worth more than the code was.
 
 ### What was tried instead, and why it is not here
 
-`stevia`, the current Phosh keyboard, is in `extra` and looked like the obvious
-answer. It cannot run on Hyprland at all: it requires eight Wayland globals and
-the eighth, `zphoc_device_state_v1`, exists only in phoc. Seven of eight are
-present here. See §8.2. `plasma-keyboard` binds `input-method-v1` /
-`input-panel-v1`, neither of which Hyprland implements. `onboard` is X11.
-`wvkbd` and `hyprkbd` are AUR-only.
+`squeekboard` from `extra` got closest — it runs on Hyprland, coexists with
+fcitx5, and a full six-row layout was written for it that does work. Two limits
+ruled it out: it has **no AltGr** (`modifier: Mod5` is rejected outright, so an
+international layout has to bolt the accents on beside the keyboard rather than
+under a key), and it synthesises its own keymap, so every keybind on the
+machine would have to be resolved by symbol instead of keycode to make the
+on-screen ones fire. See §9.3.
+
+`stevia`, the current Phosh keyboard, cannot run on Hyprland at all: it
+requires eight Wayland globals and the eighth, `zphoc_device_state_v1`, exists
+only in phoc. Seven of eight are present here. See §8.2. `plasma-keyboard`
+binds `input-method-v1` / `input-panel-v1`, neither of which Hyprland
+implements. `onboard` is X11. `wvkbd` and `hyprkbd` are AUR-only.
 
 ---
 

@@ -1708,3 +1708,77 @@ through fcitx5, which is why the keyboard itself must inject.
 | `extra/qt6-virtualkeyboard` | a framework, Qt apps only, and would fight `QT_IM_MODULE=fcitx` |
 | wvkbd, hyprkbd, fcitx5-osk | AUR only |
 | disabling fcitx5's `waylandim` | frees the input-method slot and gives full auto-show, but is a compromise on fcitx5 — explicitly excluded |
+
+---
+
+## 9. Why an on-screen keyboard's keybinds work, or do not
+
+The point of a full keyboard on a tablet is to reach the compositor's own
+keybinds. Whether that works at all comes down to one Hyprland setting and one
+choice inside the keyboard, and it is not obvious from either end.
+
+### 9.1 Hyprland matches binds by keycode, and an OSK brings its own keycodes
+
+Measured on 2026-08-17. A temporary bind was added over IPC and then driven
+with `wtype`, which creates a `zwp_virtual_keyboard_v1` exactly as an on-screen
+keyboard does:
+
+```
+hyprctl eval 'hl.bind("F9", function() ... end)'   -> registered (confirmed in `hyprctl binds`)
+wtype -k F9                                         -> bind did NOT fire
+wtype -M logo -k F12 -m logo                        -> bind did NOT fire
+```
+
+The binds were present and correct. The reason nothing fired is that
+`input:resolve_binds_by_sym` defaults to **false**, so Hyprland matches binds
+by *keycode*. `wtype` uploads its own minimal keymap, in which F9 sits at
+whatever keycode it chose, and that never matches the keycode the bind was
+compiled against.
+
+Turning the option on fixes it outright:
+
+```
+hyprctl eval 'hl.config({ input = { resolve_binds_by_sym = true } })'
+wtype -k F9              -> FIRED
+wtype -M logo -k F12 -m logo  -> FIRED
+```
+
+So any on-screen keyboard that invents its own keymap -- squeekboard does --
+needs `resolve_binds_by_sym = true` before a single keybind will work from it.
+
+### 9.2 Uploading the system keymap avoids the whole problem
+
+`fw12-oskbd` instead uploads the machine's *own* xkb keymap and sends real
+evdev codes (`KEY_Q`, `KEY_LEFTMETA`, …). Its keys are therefore
+indistinguishable from the built-in keyboard's, and binds match by keycode with
+no configuration change at all. Three things follow from the same decision:
+
+* keybinds work as shipped, and `resolve_binds_by_sym` can stay off, so bind
+  behaviour on the physical keyboard is not altered either;
+* AltGr and dead keys behave exactly as they do on the real keyboard, which is
+  what makes an international layout usable -- squeekboard cannot do this at
+  all, see §9.3;
+* key legends are read back out of the keymap at runtime, so the on-screen
+  keyboard follows `input:kb_layout` with no second copy of the layout to keep
+  in step. Verified: with `kb_layout = de` the on-screen keyboard came up with
+  ü ö ä ß, y/z swapped and Strg on the modifier caps, from the same binary.
+
+### 9.3 What squeekboard cannot do, for the record
+
+A full layout was written for squeekboard and it does work -- six rows, Super
+via `modifier: Mod4`, function keys, arrows, and an accents view. Two hard
+limits killed it:
+
+* **No AltGr.** `squeekboard-test-layout` rejects `modifier: Mod5` with
+  "Modifier Mod5 unsupported"; only Control, Shift and Mod1..Mod4 parse. An
+  international layout without AltGr is a layout with the accents bolted on
+  beside it rather than a real one.
+* **Its own keymap**, hence §9.1, hence a global change to how Hyprland
+  resolves every bind on every keyboard.
+
+Also worth writing down, since it cost time: **gdk-pixbuf on this system has no
+SVG loader** -- librsvg no longer ships one. `gtk_icon_theme_load_surface()`
+therefore fails on any scalable icon with "Unrecognized image file format", and
+icons installed into `hicolor/scalable/` silently do not render. PNGs at fixed
+sizes work. GTK4's `gtk_picture_new_for_filename()` is unaffected and loads SVG
+directly, which is how the Framework mark on the Super key renders.
