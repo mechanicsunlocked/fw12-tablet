@@ -356,6 +356,95 @@ static const char *logo_path(void) {
   return "/usr/share/fw12-tablet/framework-logo.svg";
 }
 
+
+/* ---------------------------------------------------------------------------
+ * Sizing and placement, recomputed rather than fixed at startup.
+ *
+ * The keyboard has to be re-laid-out when the display rotates: this machine
+ * spends its life folding between 1200x750 and 750x1200, and a keyboard sized
+ * once for landscape is 845 px wide on a 750 px screen -- measured at x=-48,
+ * hanging off the left edge, because the compositor centres what it is given.
+ * ------------------------------------------------------------------------ */
+static GtkWidget *g_win, *g_fixed;
+static GtkCssProvider *g_css;
+
+static void apply_geometry(void) {
+  if (!g_win || !g_fixed) return;
+
+  /* The board is 14.25u wide and 5.7u tall, so its aspect is exactly 2.5:1.
+   * Full screen width is right in portrait: 750 px across gives a 300 px
+   * strip, a quarter of the display. In landscape the same rule gives
+   * 1200x480, nearly two thirds of the screen and far too much -- so cap the
+   * height and letterbox, rather than squashing the keys out of shape to fill
+   * the width. Keeping 2.5:1 is the whole point; a stretched keyboard is
+   * exactly what stops it feeling like the real one.
+   *
+   * Keys land at ~12.8 mm across in landscape and ~11.2 mm in portrait, both
+   * past the ~9 mm where taps start being missed (section 5.4). */
+  const double ASPECT  = 14.25 / 5.7;   /* 2.5 */
+  const double MAXFRAC = 0.45;
+  int sw = 1200, sh = 750;
+  {
+    GListModel *mons = gdk_display_get_monitors(gdk_display_get_default());
+    GdkMonitor *m0 = mons ? g_list_model_get_item(mons, 0) : NULL;
+    if (m0) {
+      GdkRectangle geo; gdk_monitor_get_geometry(m0, &geo);
+      sw = geo.width; sh = geo.height;
+      g_object_unref(m0);   /* g_list_model_get_item() returns an owned ref */
+    }
+  }
+  int kbd_w = sw, kbd_h = (int)lround(sw / ASPECT);
+  int cap = (int)lround(sh * MAXFRAC);
+  if (kbd_h > cap) { kbd_h = cap; kbd_w = (int)lround(kbd_h * ASPECT); }
+  const char *he = g_getenv("FW12TAB_OSK_HEIGHT");
+  if (he && *he) { kbd_h = atoi(he); kbd_w = (int)lround(kbd_h * ASPECT); }
+
+  /* Key metrics follow the rendered size rather than a constant. The gap
+   * between key faces is 0.105u on the machine; it is applied as an inset when
+   * each key is placed, not as a CSS margin, so the geometry stays exactly
+   * what was measured. */
+  double unit   = kbd_w / 14.25;
+  int    gap_px = (int)lround(unit * 0.105); if (gap_px < 2) gap_px = 2;
+
+  if (g_css) {
+    int radius   = (int)lround(unit * 0.105);
+    int fontpx   = (int)lround(unit * 0.30);
+    /* The stacked arrows are half a row tall. At the normal size their labels
+     * alone demand more height than half a row and the whole keyboard grows to
+     * satisfy them, silently breaking the proportion this is all in aid of.
+     * Measured: 399 px tall instead of 338. */
+    int fonthalf = (int)lround(unit * 0.22);
+    char *sheet = g_strdup_printf(CSS_FMT, radius, fontpx, fonthalf);
+    gtk_css_provider_load_from_string(g_css, sheet);
+    g_free(sheet);
+  }
+
+  /* Slot edges first, then inset half a gap on each side, so the gap between
+   * two neighbours is exactly one gap and no seam drifts. */
+  double sx = (double)kbd_w / KW, sy = (double)kbd_h / 57.0;
+  int inset = gap_px / 2;
+  for (int i = 0; i < NKEYS; i++) {
+    Key *k = &keys[i];
+    if (!k->button) continue;
+    int x0 = (int)lround(k->col * sx), x1 = (int)lround((k->col + k->wspan) * sx);
+    int y0 = (int)lround(k->row * sy), y1 = (int)lround((k->row + k->hspan) * sy);
+    gtk_widget_set_size_request(k->button, (x1 - x0) - 2 * inset, (y1 - y0) - 2 * inset);
+    gtk_fixed_move(GTK_FIXED(g_fixed), k->button, x0 + inset, y0 + inset);
+  }
+
+  gtk_widget_set_size_request(g_fixed, kbd_w, kbd_h);
+  gtk_widget_set_size_request(g_win, kbd_w, kbd_h);
+  gtk_window_set_default_size(GTK_WINDOW(g_win), kbd_w, kbd_h);
+  /* Reserve the strip so tiled windows shrink to sit ABOVE the keyboard
+   * instead of being covered by it (the mechanism waybar uses). */
+  gtk_layer_set_exclusive_zone(GTK_WINDOW(g_win), kbd_h);
+}
+
+static void on_monitor_changed(GObject *o, GParamSpec *p, gpointer u) {
+  (void)o; (void)p; (void)u;
+  apply_geometry();
+}
+
 static void on_activate(GtkApplication *app, gpointer u) {
   char **argv = u;
   const char *layout  = argv[1] && *argv[1] ? argv[1] : (g_getenv("XKB_DEFAULT_LAYOUT") ?: "us");
@@ -395,75 +484,16 @@ static void on_activate(GtkApplication *app, gpointer u) {
    * geometry and adjacent keys always share an edge. */
   GtkWidget *grid = gtk_fixed_new();
 
-  /* Size, keeping the machine's proportions in both orientations.
-   *
-   * The board is 14.25u wide and 5.7u tall, so its aspect is exactly 2.5:1.
-   * Full screen width is the obvious choice and is right in portrait: 750 px
-   * across gives a 300 px strip, a quarter of the display. In landscape the
-   * same rule gives 1200 x 480, which is nearly two thirds of the screen and
-   * far too much.
-   *
-   * So: full width unless that exceeds MAXFRAC of the display height, and if
-   * it does, letterbox -- shrink to the cap and centre, rather than squashing
-   * the keys out of shape to fill the width. Keeping 2.5:1 is the whole point;
-   * a stretched keyboard is exactly what stops it feeling like the real one.
-   *
-   * At the cap in landscape the keys come out ~12.8 mm across, and in portrait
-   * ~11.2 mm -- both comfortably past the ~9 mm where taps start being missed
-   * (section 5.4). */
-  const double ASPECT  = 14.25 / 5.7;   /* 2.5 */
-  const double MAXFRAC = 0.45;
-  int kbd_w = 1200, kbd_h = 480;
-  {
-    GListModel *mons = gdk_display_get_monitors(gdk_display_get_default());
-    GdkMonitor *m0 = mons ? g_list_model_get_item(mons, 0) : NULL;
-    if (m0) {
-      GdkRectangle geo; gdk_monitor_get_geometry(m0, &geo);
-      kbd_w = geo.width;
-      kbd_h = (int)lround(kbd_w / ASPECT);
-      int cap = (int)lround(geo.height * MAXFRAC);
-      if (kbd_h > cap) {
-        kbd_h = cap;
-        kbd_w = (int)lround(kbd_h * ASPECT);
-      }
-      g_object_unref(m0);   /* g_list_model_get_item() returns an owned ref */
-    }
-    const char *he = g_getenv("FW12TAB_OSK_HEIGHT");
-    if (he && *he) { kbd_h = atoi(he); kbd_w = (int)lround(kbd_h * ASPECT); }
-  }
-
-  /* Anchored to the bottom edge only, so the surface is exactly kbd_w wide and
-   * the compositor centres it. Anchoring left and right as well would stretch
-   * it across the display, and a widget inside cannot be held narrower than its
-   * natural width, so centring within a full-width window does not work. */
-  gtk_widget_set_size_request(grid, kbd_w, kbd_h);
-  gtk_window_set_default_size(GTK_WINDOW(win), kbd_w, kbd_h);
-  gtk_widget_set_size_request(win, kbd_w, kbd_h);
-
-  /* Key metrics follow the rendered size rather than a constant. The gap
-   * between key faces is 0.105u on the machine; here it is applied as an inset
-   * when each key is placed, not as a CSS margin, so that the geometry stays
-   * exactly what was measured. */
-  double unit   = kbd_w / 14.25;
-  int    gap_px = (int)lround(unit * 0.105); if (gap_px < 2) gap_px = 2;
-  {
-    GtkCssProvider *css = gtk_css_provider_new();
-    int radius = (int)lround(unit * 0.105);
-    int fontpx = (int)lround(unit * 0.30);
-    /* The stacked arrows are half a row tall. Left at the normal size their
-     * labels alone demand more height than half a row, and GtkGrid grows the
-     * whole keyboard to satisfy them -- which silently breaks the 2.5:1
-     * proportion this is all in aid of. Measured: 399 px tall instead of 338. */
-    int fonthalf = (int)lround(unit * 0.22);
-    char *sheet = g_strdup_printf(CSS_FMT, radius, fontpx, fonthalf);
-    gtk_css_provider_load_from_string(css, sheet);
-    g_free(sheet);
-    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-        GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-  }
-  /* Reserve the strip so tiled windows shrink to sit ABOVE the keyboard instead
-   * of being covered by it (same mechanism waybar uses). */
-  gtk_layer_set_exclusive_zone(GTK_WINDOW(win), kbd_h);
+  /* Anchored to the bottom edge only, so the surface is exactly as wide as the
+   * keyboard and the compositor centres it. Anchoring left and right as well
+   * would stretch it across the display, and a widget inside cannot be held
+   * narrower than its natural width, so centring within a full-width window
+   * does not work. Actual sizes come from apply_geometry() below. */
+  g_win = win;
+  g_fixed = grid;
+  g_css = gtk_css_provider_new();
+  gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+      GTK_STYLE_PROVIDER(g_css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
   /* Wayland virtual keyboard: bind the manager on GDK's display + seat. */
   GdkDisplay *disp = gdk_display_get_default();
@@ -517,20 +547,24 @@ static void on_activate(GtkApplication *app, gpointer u) {
     g_signal_connect(gc, "cancel", G_CALLBACK(on_cancel), k);
     gtk_widget_add_controller(key, GTK_EVENT_CONTROLLER(gc));
     if (k->hspan * 2 <= 10) gtk_widget_add_css_class(key, "half");
-
-    /* Slot edges first, then inset by half a gap on each side, so that the
-     * gap between two neighbours is exactly one gap and no seam drifts. */
-    double sx = (double)kbd_w / KW, sy = (double)kbd_h / 57.0;
-    int x0 = (int)lround(k->col * sx),  x1 = (int)lround((k->col + k->wspan) * sx);
-    int y0 = (int)lround(k->row * sy),  y1 = (int)lround((k->row + k->hspan) * sy);
-    int inset = gap_px / 2;
-    gtk_widget_set_size_request(key, (x1 - x0) - 2 * inset, (y1 - y0) - 2 * inset);
-    gtk_fixed_put(GTK_FIXED(grid), key, x0 + inset, y0 + inset);
+    gtk_fixed_put(GTK_FIXED(grid), key, 0, 0);   /* positioned by apply_geometry() */
     k->button = key;
   }
 
   relabel_keys();   /* set initial keycap symbols from the keymap */
   gtk_window_set_child(GTK_WINDOW(win), grid);
+
+  apply_geometry();
+  {
+    GListModel *mons = gdk_display_get_monitors(gdk_display_get_default());
+    GdkMonitor *m0 = mons ? g_list_model_get_item(mons, 0) : NULL;
+    if (m0) {
+      /* Rotating the panel changes the monitor's geometry rather than
+       * replacing the monitor, so one notify is enough to catch a fold. The
+       * reference is deliberately kept: the handler outlives this scope. */
+      g_signal_connect(m0, "notify::geometry", G_CALLBACK(on_monitor_changed), NULL);
+    }
+  }
   gtk_window_present(GTK_WINDOW(win));
 }
 

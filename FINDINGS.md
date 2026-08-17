@@ -1864,3 +1864,22 @@ Centring is done by the compositor: the surface is anchored to the bottom edge
 only and sized to 845, rather than anchored left and right and centred
 internally -- a widget cannot be held narrower than its natural width, so the
 internal approach does not work.
+
+### 10.5 Sizing once is not enough
+
+The first version read the monitor geometry at startup and never looked again,
+which is wrong on the one machine it was written for: fold it and the keyboard
+keeps its landscape size on a portrait screen. Measured -- 845 px wide on a
+750 px display, placed at **x = -48**, hanging off the left edge, because the
+compositor centres whatever size it is handed.
+
+Layout is now recomputed from `notify::geometry` on the monitor. Rotating the
+panel changes that monitor's geometry rather than replacing the monitor, so one
+signal catches a fold. Verified live, in both directions, with the keyboard
+open throughout:
+
+| | surface | aspect |
+|---|---|---|
+| landscape | 845x338 at x=178 | 2.50 |
+| portrait | 750x300 at x=0 | 2.50 |
+| back to landscape | 845x338 at x=178 | 2.50 |
