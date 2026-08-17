@@ -224,10 +224,17 @@ Item {
 
     readonly property string swipeUp: settings.swipeUp !== undefined ? settings.swipeUp : "@keyboard"
     readonly property string swipeDown: settings.swipeDown !== undefined ? settings.swipeDown : "omarchy-menu"
-    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch workspace e-1"
-    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch workspace e+1"
+    // `hyprctl dispatch` takes a *Lua expression* on Omarchy 4, not the
+    // hyprland-1 words: `hyprctl dispatch workspace e+1` fails with a Lua
+    // syntax error and does nothing. This is the form Omarchy's own workspace
+    // widget uses.
+    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'"
+    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
     readonly property int swipeEdge: settings.swipeEdge !== undefined ? settings.swipeEdge : Style.space(16)
-    readonly property int swipeThreshold: settings.swipeThreshold !== undefined ? settings.swipeThreshold : Style.space(60)
+    // Short on purpose. A strip is 16 px, so the finger is off it almost at
+    // once and the rest of the travel is unguided; asking for 60 px made the
+    // gesture feel like a drag rather than a flick.
+    readonly property int swipeThreshold: settings.swipeThreshold !== undefined ? settings.swipeThreshold : Style.space(30)
 
     FileView {
         id: settingsFile
@@ -263,6 +270,11 @@ Item {
     // splitting one correctly is the shell's job. One shot per swipe.
     Process {
         id: actionProc
+
+        onExited: function (exitCode) {
+            if (exitCode !== 0)
+                console.warn("fw12-tablet: swipe command exited " + exitCode + ": " + actionProc.command.join(" "));
+        }
     }
 
     function runAction(key) {
@@ -273,6 +285,7 @@ Item {
             root.requestKeyboard(!root.keyboardShown);
             return;
         }
+        console.log("fw12-tablet: swipe " + key + " -> " + cmd);
         actionProc.running = false;
         actionProc.command = ["sh", "-c", cmd];
         actionProc.running = true;
@@ -284,42 +297,40 @@ Item {
     // exclusive zones, which means the bottom strip sits above the keyboard
     // when it is out, and the top strip below the bar -- never on top of
     // either, and with no geometry duplicated here to keep in step.
+    // Three strips, not four. The bar owns the real top edge -- a strip placed
+    // under it is unreachable, because a swipe that starts at the top of the
+    // screen starts on the bar and the bar gets the gesture. So both vertical
+    // actions live on the bottom strip, told apart by direction.
     readonly property var swipeEdges: [
         {
-            key: "up",
+            name: "bottom",
             top: false,
             bottom: true,
             left: true,
             right: true,
             axis: "y",
-            sign: -1
+            negKey: "up",
+            posKey: "down"
         },
         {
-            key: "down",
-            top: true,
-            bottom: false,
-            left: true,
-            right: true,
-            axis: "y",
-            sign: 1
-        },
-        {
-            key: "right",
+            name: "left",
             top: true,
             bottom: true,
             left: true,
             right: false,
             axis: "x",
-            sign: 1
+            negKey: "",
+            posKey: "right"
         },
         {
-            key: "left",
+            name: "right",
             top: true,
             bottom: true,
             left: false,
             right: true,
             axis: "x",
-            sign: -1
+            negKey: "left",
+            posKey: ""
         }
     ]
 
@@ -335,7 +346,7 @@ Item {
             screen: root.targetScreens[0]
             color: "transparent"
 
-            WlrLayershell.namespace: "fw12-swipe-" + modelData.key
+            WlrLayershell.namespace: "fw12-swipe-" + modelData.name
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
             exclusionMode: ExclusionMode.Normal
@@ -364,12 +375,15 @@ Item {
                     var t = swipe.activeTranslation;
                     var along = strip.modelData.axis === "y" ? t.y : t.x;
                     var across = strip.modelData.axis === "y" ? t.x : t.y;
-                    // Far enough, the right way, and more along the axis than
-                    // across it -- so a wander along the edge is not a swipe.
-                    if (along * strip.modelData.sign > root.swipeThreshold && Math.abs(along) > Math.abs(across)) {
-                        strip.fired = true;
-                        root.runAction(strip.modelData.key);
-                    }
+                    // Far enough, and more along the strip's axis than across
+                    // it, so a wander along the edge is not a swipe.
+                    if (Math.abs(along) < root.swipeThreshold || Math.abs(along) <= Math.abs(across))
+                        return;
+                    var key = along < 0 ? strip.modelData.negKey : strip.modelData.posKey;
+                    if (key === "")
+                        return;
+                    strip.fired = true;
+                    root.runAction(key);
                 }
             }
         }

@@ -90,18 +90,22 @@ Unfolding puts the keyboard away and takes the button with it.
 
 ### Swipes
 
-Four edge swipes, active only while folded:
+Three edge strips, active only while folded. The bottom one carries both
+vertical gestures:
 
 | Swipe | Default |
 |---|---|
 | up, from the bottom edge | show/hide the keyboard |
-| down, from the top edge | `omarchy-menu` |
+| down, on the bottom strip | `omarchy-menu` |
 | right, from the left edge | previous workspace |
 | left, from the right edge | next workspace |
 
-They are named for the direction your finger travels. The strips are 16 px and
-sit in whatever space the bar and keyboard are not using, so a swipe strip is
-never on top of a key or a bar widget.
+There is deliberately no top-edge strip: the bar owns the real top edge, so a
+swipe that starts there starts on the bar and the bar gets it.
+
+The strips are 16 px and sit in whatever space the bar and keyboard are not
+using, so one is never on top of a key or a bar widget — when the keyboard is
+out, the bottom strip moves up to sit just above it.
 
 Change them in your plugin entry in `~/.config/omarchy/shell.json` — the same
 file and the same place Omarchy keeps every other plugin's settings:
@@ -111,16 +115,22 @@ file and the same place Omarchy keeps every other plugin's settings:
   "id": "drotiesel.fw12-tablet",
   "swipeUp": "@keyboard",
   "swipeDown": "omarchy-menu",
-  "swipeRight": "hyprctl dispatch workspace e-1",
-  "swipeLeft": "hyprctl dispatch workspace e+1",
+  "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'",
   "swipeEdge": 16,
-  "swipeThreshold": 60
+  "swipeThreshold": 30
 }
 ```
 
 `@keyboard` is the one built-in action; anything else is run as a command. Set
 a value to `""` to disable that swipe. The file is watched, so changes take
 effect without restarting anything.
+
+Note the shape of those workspace commands. **`hyprctl dispatch` takes a Lua
+expression on Omarchy 4**, not the words you would use on a hyprlang config —
+`hyprctl dispatch workspace e+1` fails with a Lua syntax error and silently
+does nothing. `hyprctl dispatch 'hl.dsp.focus({ workspace = "e+1" })'` is the
+form Omarchy's own workspace widget uses.
 
 ### Making it always visible
 
