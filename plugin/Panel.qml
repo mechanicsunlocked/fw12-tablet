@@ -105,6 +105,16 @@ Item {
         keyboard.running = on;
     }
 
+    // Reachable from a keybind as
+    //   omarchy-shell shell call drotiesel.fw12-tablet toggle ''
+    // which is what SUPER+K in the Lua half runs. Aiming for a 32 px strip is
+    // not always what you want.
+    function toggle(arg) {
+        var want = !root.keyboardShown;
+        root.requestKeyboard(want);
+        return want ? "shown" : "hidden";
+    }
+
     // The layout is read from Hyprland rather than configured here, so the
     // on-screen keyboard is whatever the real keyboard is -- change
     // `input:kb_layout` and this follows, with no second copy to update.
@@ -457,8 +467,15 @@ Item {
                 item: button
             }
 
-            readonly property real travelX: Math.max(0, surface.width - root.buttonSize - root.edgeMargin * 2)
-            readonly property real travelY: Math.max(0, surface.height - root.buttonSize - root.edgeMargin * 2)
+            // The swipe strips are separate layer surfaces stacked above this
+            // one, so wherever the button overlaps one the strip takes the
+            // touch and that part of the button is dead -- which is exactly
+            // how it ends up feeling stuck once dragged into a corner. Keep
+            // its travel inside the space the strips do not claim.
+            readonly property int insetSide: root.swipeEdge + root.edgeMargin
+            readonly property int insetBottom: root.swipeEdgeBottom + root.edgeMargin
+            readonly property real travelX: Math.max(0, surface.width - root.buttonSize - surface.insetSide * 2)
+            readonly property real travelY: Math.max(0, surface.height - root.buttonSize - root.edgeMargin - surface.insetBottom)
 
             Item {
                 id: button
@@ -466,7 +483,7 @@ Item {
                 width: root.buttonSize
                 height: root.buttonSize
 
-                x: root.edgeMargin + surface.travelX * root.fx
+                x: surface.insetSide + surface.travelX * root.fx
                 y: root.edgeMargin + surface.travelY * root.fy
 
                 // Left dim while idle so it reads as an accessory rather than

@@ -287,6 +287,21 @@ S.lock_bound = false
 S.applied = 0
 S.pending, S.pending_n = nil, 0
 
+-- Toggle the on-screen keyboard.
+--
+-- Bound always, not only while folded, because its most useful job is the
+-- reverse of what it sounds like: dismissing the on-screen keyboard *from* the
+-- on-screen keyboard, whose Framework key is a real Super. Aiming for a 32 px
+-- strip is not always what you want, and there is nothing else to press.
+--
+-- SUPER + B for "board". SUPER + K is Omarchy's own keybindings menu
+-- (bindings/utilities.lua), so it is not available; the free SUPER letters on
+-- a stock install are A B D E H I M N Q U Y Z.
+hl.bind("SUPER + B", function()
+    hl.dispatch(hl.dsp.exec_cmd(
+        "omarchy-shell shell call drotiesel.fw12-tablet toggle ''"))
+end, { description = "Toggle the on-screen keyboard" })
+
 hl.bind("switch:on:" .. SWITCH_DEV, enter_tablet, { locked = true })
 hl.bind("switch:off:" .. SWITCH_DEV, leave_tablet, { locked = true })
 

@@ -36,8 +36,15 @@ Then add one line to `~/.config/hypr/hyprland.lua`:
 require("hypr.fw12-tablet")
 ```
 
-`SUPER + R` locks and unlocks auto-rotation while folded. The lock clears when
-you unfold.
+`SUPER + R` locks and unlocks auto-rotation while folded; the lock clears when
+you unfold. `SUPER + B` toggles the on-screen keyboard.
+
+`SUPER + B` is bound always, not only while folded, because its most useful job
+is the reverse of what it sounds like: dismissing the on-screen keyboard *from*
+the on-screen keyboard, whose Framework key is a real Super. Two taps, and no
+aiming. `SUPER + K` would have been the obvious letter but it is Omarchy's own
+keybindings menu; on a stock install the free `SUPER` letters are A B D E H I M
+N Q U Y Z, and `SUPER + CTRL + <anything>` is completely unused.
 
 ### 2. Keyboard
 
