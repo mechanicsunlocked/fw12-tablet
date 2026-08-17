@@ -45,6 +45,20 @@ local DEAD_ZONE = math.floor(ONE_G * 2 / 5) -- 40% of 1 g to call an axis domina
 local TABLET_ANGLE = 200 -- hinge angle treated as "already folded" at load
 local SWITCH_DEV = "gpio-keys" -- as Hyprland names the SW_TABLET_MODE device
 
+-- Focus handling while folded.
+--
+-- With follow_mouse = 1 the keyboard focus detaches from the window you are
+-- typing into for as long as a finger rests on the on-screen keyboard, because
+-- what is under the finger is a layer surface and not a window. A tap is too
+-- brief to notice; a swipe or a resting hand holds it, and every key pressed in
+-- that time goes nowhere. Measured on the Hyprland event socket: `activewindow`
+-- goes empty on touch-down and comes back on release.
+--
+-- 2 means keyboard focus follows clicks into windows rather than the pointer,
+-- which is the behaviour a tablet wants anyway. Laptop mode is left alone.
+local TABLET_FOLLOW_MOUSE = 2
+local LAPTOP_FOLLOW_MOUSE = 1 -- Omarchy's default; change here if yours differs
+
 -- Where the folded state is published for anything outside Hyprland to read.
 -- The shell plugin watches this to decide whether to show its keyboard button.
 -- A file rather than IPC because the reader is a Quickshell FileView, which
@@ -224,6 +238,7 @@ local function enter_tablet()
     S.tablet = true
     S.pending, S.pending_n = nil, 0
     write_mode("tablet")
+    hl.config({ input = { follow_mouse = TABLET_FOLLOW_MOUSE } })
     if not S.lock_bound then
         hl.bind("SUPER + R", toggle_lock, { description = "Toggle auto-rotation lock" })
         S.lock_bound = true
@@ -235,6 +250,7 @@ local function leave_tablet()
     S.tablet = false
     S.pending, S.pending_n = nil, 0
     write_mode("laptop")
+    hl.config({ input = { follow_mouse = LAPTOP_FOLLOW_MOUSE } })
     -- Unfolding clears the rotation lock.
     --
     -- The lock is for holding the device at an angle you do not want followed

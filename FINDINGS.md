@@ -1883,3 +1883,93 @@ open throughout:
 | landscape | 845x338 at x=178 | 2.50 |
 | portrait | 750x300 at x=0 | 2.50 |
 | back to landscape | 845x338 at x=178 | 2.50 |
+
+---
+
+## 11. Touching a layer surface detaches keyboard focus
+
+Reported as "swiping on the keyboard steals focus". It does, and the mechanism
+is not the keyboard's.
+
+Captured on Hyprland's event socket while it happened:
+
+```
+   6.53  activewindow>>,
+   9.29  activewindow>>com.mitchellh.ghostty,...
+  20.94  activewindow>>,
+  22.50  activewindow>>com.mitchellh.ghostty,...
+```
+
+Focus goes to **nothing** -- not to another window -- and comes back on
+release. That is `input:follow_mouse = 1` doing what it says: the surface under
+the finger is a layer surface, not a window, so there is no window to focus and
+the current one is dropped. A tap is too brief to notice. A swipe, or a hand
+resting while typing, holds it for the whole gesture, and every key sent in
+that time goes nowhere.
+
+Ruled out first, with evidence:
+
+* the keyboard taking focus itself -- `WAYLAND_DEBUG` shows
+  `zwlr_layer_surface_v1.set_keyboard_interactivity(0)`, so it never can;
+* an overlay opening -- no `openlayer` in the trace between the two events;
+* a workspace gesture -- `gestures:workspace_swipe_touch` is false, and the
+  workspace changes in the trace are accounted for by the user opening an app.
+
+**Fix:** `input:follow_mouse = 2` while folded, restored on unfold. Keyboard
+focus then follows clicks into windows rather than the pointer, which is what a
+tablet wants anyway, and laptop behaviour is untouched. Confirmed by the user
+after applying it live.
+
+---
+
+## 12. A resting hand breaks a touch keyboard two ways
+
+Both seen in one sitting, and both worth writing down because neither is
+obvious from the code.
+
+**A locked modifier.** `mod_tap()` treats a second press inside the
+double-tap window as "lock this modifier". The back of a hand does not make one
+clean contact, so a modifier under it locks, and everything typed afterwards
+silently carries Ctrl or AltGr. There is a tell -- a locked key is drawn blue --
+but nothing else says so.
+
+**A key that never comes up.** `GtkGestureClick` derives from
+`GtkGestureSingle` and tracks one touch sequence at a time; a second contact on
+the same key can end the first without emitting `released`. The key stays down
+and the compositor repeats it. Observed output: a screenful of `ÄÄÄÄÄÄ...`,
+which also shows Shift was locked at the time, i.e. both failures at once.
+
+**Fixes.** Three contacts inside 150 ms is a hand, not fingers: drop them all,
+clear every latch, and stay quiet until all contacts lift. Separately, rather
+than time keys out -- holding backspace is legitimate -- the watchdog asks GTK
+whether each held key's gesture is still active, and frees the key only when it
+is not. That is the actual fault condition, so nothing legitimate is cut short.
+
+---
+
+## 13. Edge gestures without a compositor plugin
+
+Hyprland's gesture system is trackpad only; its wiki opens with "Hyprland
+supports 1:1 gestures for the trackpad". Touchscreen gestures normally mean the
+`hyprgrass` plugin, which is AUR-only and, being a compositor plugin, must be
+rebuilt against every Hyprland release -- the exact fragility this project set
+out to avoid.
+
+A thin layer surface per edge does the job with no plugin at all: it is an
+ordinary Wayland client, so a Hyprland update cannot break it.
+
+The placement problem solves itself with `exclusionMode: Normal` and
+`exclusiveZone: 0` -- reserve nothing, but respect what others reserve. The
+compositor then places each strip in whatever area is left, and no geometry has
+to be duplicated or kept in step. Measured, with the keyboard occupying
+y 412..750:
+
+| surface | keyboard hidden | keyboard shown |
+|---|---|---|
+| `fw12-swipe-up` | y 734..750 (screen bottom) | y 396..412 (above the keyboard) |
+| `fw12-swipe-down` | y 26..42 (below the bar) | unchanged |
+| side strips | y 26..750 | y 26..412 (stop at the keyboard) |
+| the button's window | y 26..750 | y 26..412 |
+
+So a strip can never sit on top of a key, and the button can never be dragged
+onto one.

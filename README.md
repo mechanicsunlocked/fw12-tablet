@@ -88,9 +88,52 @@ The button appears only while the machine is folded into a tablet.
 
 Unfolding puts the keyboard away and takes the button with it.
 
+### Swipes
+
+Four edge swipes, active only while folded:
+
+| Swipe | Default |
+|---|---|
+| up, from the bottom edge | show/hide the keyboard |
+| down, from the top edge | `omarchy-menu` |
+| right, from the left edge | previous workspace |
+| left, from the right edge | next workspace |
+
+They are named for the direction your finger travels. The strips are 16 px and
+sit in whatever space the bar and keyboard are not using, so a swipe strip is
+never on top of a key or a bar widget.
+
+Change them in your plugin entry in `~/.config/omarchy/shell.json` — the same
+file and the same place Omarchy keeps every other plugin's settings:
+
+```json
+{
+  "id": "drotiesel.fw12-tablet",
+  "swipeUp": "@keyboard",
+  "swipeDown": "omarchy-menu",
+  "swipeRight": "hyprctl dispatch workspace e-1",
+  "swipeLeft": "hyprctl dispatch workspace e+1",
+  "swipeEdge": 16,
+  "swipeThreshold": 60
+}
+```
+
+`@keyboard` is the one built-in action; anything else is run as a command. Set
+a value to `""` to disable that swipe. The file is watched, so changes take
+effect without restarting anything.
+
 ### Making it always visible
 
 Set `tabletOnly` to `false` at the top of `Panel.qml`.
+
+### Focus while folded
+
+Folding sets `input:follow_mouse = 2` and unfolding puts it back to `1`.
+Without it, keyboard focus detaches from the window you are typing into for as
+long as a finger rests on the keyboard — because what is under your finger is a
+layer surface, not a window — and everything typed in that time goes nowhere.
+See `FINDINGS.md` §11. If your laptop-mode setting is not Hyprland's default of
+`1`, change `LAPTOP_FOLLOW_MOUSE` at the top of the Lua.
 
 ### Keyboard layout
 

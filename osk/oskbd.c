@@ -43,6 +43,7 @@ typedef struct Key {
   GtkWidget *button;   /* the key widget (a styled GtkBox) */
   GtkWidget *lbl;      /* GtkLabel inside (NULL for the SVG key) */
   uint32_t down_code;  /* evdev code currently held down (0 = none) */
+  GtkGesture *gest;    /* the click gesture, so a lost release can be detected */
 } Key;
 
 /* ---------------------------------------------------------------------------
@@ -281,9 +282,90 @@ static void mod_tap(uint32_t bit, int np) {
   else         { one_shot ^= bit; }                 /* single tap = one-shot   */
 }
 
+/* ---------------------------------------------------------------------------
+ * Palm guard and stuck-key watchdog
+ *
+ * Two failures seen in use, both from resting a hand on the keyboard rather
+ * than typing with fingers:
+ *
+ *   1. Several keys go down at once. Worse, a modifier hit twice in quick
+ *      succession reads as a double-tap and *locks*, so everything typed
+ *      afterwards silently carries Ctrl or AltGr.
+ *   2. A key goes down and its release never arrives -- GtkGestureClick tracks
+ *      one touch sequence at a time, and a second contact on the same key can
+ *      end the first without a "released". The compositor then repeats that key
+ *      forever, which is what produced a screenful of ÄÄÄÄÄ.
+ *
+ * The guard: three contacts inside 150 ms is a hand, not fingers. Drop the lot,
+ * clear every latch, and stay quiet until all contacts have lifted.
+ *
+ * The watchdog: rather than time keys out -- holding backspace is legitimate --
+ * ask GTK whether each held key's gesture is still active. If it is not, the
+ * release was lost and the key is freed. That is the actual fault condition,
+ * so nothing legitimate is ever cut short.
+ * ------------------------------------------------------------------------ */
+static void key_up(Key *k);   /* defined below, next to the send path */
+
+#define PALM_KEYS      3
+#define PALM_WINDOW_US (150 * 1000)
+
+static int      contacts;        /* touch sequences currently down */
+static gint64   first_down_us;
+static gboolean palming;
+static guint    watchdog_id;
+
+static void release_all(void) {
+  for (int i = 0; i < NKEYS; i++)
+    if (keys[i].down_code) key_up(&keys[i]);
+  one_shot = 0; locks = 0; fn_active = FALSE;
+  send_mods(); refresh_highlight(); relabel_keys();
+  wl_display_flush(wl_dpy);
+}
+
+static gboolean watchdog(gpointer u) {
+  (void)u;
+  int still_held = 0;
+  for (int i = 0; i < NKEYS; i++) {
+    Key *k = &keys[i];
+    if (!k->down_code) continue;
+    if (k->gest && !gtk_gesture_is_active(k->gest)) {
+      g_warning("fw12-oskbd: freeing stuck key %u (touch ended with no release)",
+                k->down_code);
+      key_up(k);
+    } else {
+      still_held++;
+    }
+  }
+  if (still_held) return G_SOURCE_CONTINUE;
+  watchdog_id = 0;
+  return G_SOURCE_REMOVE;
+}
+
+static void arm_watchdog(void) {
+  if (!watchdog_id) watchdog_id = g_timeout_add(250, watchdog, NULL);
+}
+
+/* Called for every release and cancel, so the contact count cannot drift. */
+static void end_contact(Key *k) {
+  if (contacts > 0) contacts--;
+  if (contacts == 0) palming = FALSE;
+  key_up(k);
+}
+
 static void on_pressed(GtkGestureClick *g, int np, double x, double y, gpointer u) {
   (void)g;(void)x;(void)y;
   Key *k = u;
+
+  gint64 now = g_get_monotonic_time();
+  if (contacts == 0) first_down_us = now;
+  contacts++;
+  if (palming) return;
+  if (contacts >= PALM_KEYS && now - first_down_us < PALM_WINDOW_US) {
+    palming = TRUE;
+    release_all();
+    return;
+  }
+
   gtk_widget_add_css_class(k->button, "pressed");
   switch (k->type) {
     case KT_MOD:
@@ -318,10 +400,10 @@ static void key_up(Key *k) {
   }
 }
 static void on_released(GtkGestureClick *g, int np, double x, double y, gpointer u) {
-  (void)g;(void)np;(void)x;(void)y; key_up((Key *)u);
+  (void)g;(void)np;(void)x;(void)y; end_contact((Key *)u);
 }
 static void on_cancel(GtkGesture *g, GdkEventSequence *seq, gpointer u) {
-  (void)g;(void)seq; key_up((Key *)u);
+  (void)g;(void)seq; end_contact((Key *)u);
 }
 
 /* Filled in at runtime. The gap between key faces on the machine is 0.105u, so
@@ -546,6 +628,7 @@ static void on_activate(GtkApplication *app, gpointer u) {
     g_signal_connect(gc, "released", G_CALLBACK(on_released), k);
     g_signal_connect(gc, "cancel", G_CALLBACK(on_cancel), k);
     gtk_widget_add_controller(key, GTK_EVENT_CONTROLLER(gc));
+    k->gest = gc;
     if (k->hspan * 2 <= 10) gtk_widget_add_css_class(key, "half");
     gtk_fixed_put(GTK_FIXED(grid), key, 0, 0);   /* positioned by apply_geometry() */
     k->button = key;

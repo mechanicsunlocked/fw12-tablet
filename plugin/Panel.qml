@@ -200,6 +200,181 @@ Item {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Swipe actions
+    //
+    // Read out of this plugin's own entry in ~/.config/omarchy/shell.json,
+    // which is where Omarchy keeps per-plugin settings ("the fields on each
+    // entry are the values the plugin sees"). Nothing new to learn and nothing
+    // extra to install; an absent field falls back to the default below.
+    //
+    //   { "id": "drotiesel.fw12-tablet",
+    //     "swipeUp":    "@keyboard",
+    //     "swipeDown":  "omarchy-menu",
+    //     "swipeRight": "hyprctl dispatch workspace e-1",
+    //     "swipeLeft":  "hyprctl dispatch workspace e+1",
+    //     "swipeEdge":  16,
+    //     "swipeThreshold": 60 }
+    //
+    // Swipes are named for the direction your finger travels, starting at the
+    // matching edge. "@keyboard" is the one built-in action; anything else is
+    // run as a command.
+    // -----------------------------------------------------------------------
+    property var settings: ({})
+
+    readonly property string swipeUp: settings.swipeUp !== undefined ? settings.swipeUp : "@keyboard"
+    readonly property string swipeDown: settings.swipeDown !== undefined ? settings.swipeDown : "omarchy-menu"
+    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch workspace e-1"
+    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch workspace e+1"
+    readonly property int swipeEdge: settings.swipeEdge !== undefined ? settings.swipeEdge : Style.space(16)
+    readonly property int swipeThreshold: settings.swipeThreshold !== undefined ? settings.swipeThreshold : Style.space(60)
+
+    FileView {
+        id: settingsFile
+
+        path: root.home + "/.config/omarchy/shell.json"
+        watchChanges: true
+        printErrors: false
+
+        onFileChanged: reload()
+        onLoaded: {
+            var found = ({});
+            try {
+                var list = JSON.parse(text()).plugins || [];
+                for (var i = 0; i < list.length; i++) {
+                    if (list[i] && list[i].id === "drotiesel.fw12-tablet") {
+                        found = list[i];
+                        break;
+                    }
+                }
+            } catch (e) {}
+            root.settings = found;
+        }
+    }
+
+    function actionFor(key) {
+        if (key === "up") return root.swipeUp;
+        if (key === "down") return root.swipeDown;
+        if (key === "left") return root.swipeLeft;
+        return root.swipeRight;
+    }
+
+    // `sh -c` because the value is a command line written by a person, and
+    // splitting one correctly is the shell's job. One shot per swipe.
+    Process {
+        id: actionProc
+    }
+
+    function runAction(key) {
+        var cmd = String(root.actionFor(key) || "");
+        if (cmd === "")
+            return;
+        if (cmd === "@keyboard") {
+            root.requestKeyboard(!root.keyboardShown);
+            return;
+        }
+        actionProc.running = false;
+        actionProc.command = ["sh", "-c", cmd];
+        actionProc.running = true;
+    }
+
+    // Edge strips. Each is its own small layer surface rather than a masked
+    // region of one big one, so that `exclusionMode: Normal` can do the hard
+    // part: the compositor places each strip in the area left over by other
+    // exclusive zones, which means the bottom strip sits above the keyboard
+    // when it is out, and the top strip below the bar -- never on top of
+    // either, and with no geometry duplicated here to keep in step.
+    readonly property var swipeEdges: [
+        {
+            key: "up",
+            top: false,
+            bottom: true,
+            left: true,
+            right: true,
+            axis: "y",
+            sign: -1
+        },
+        {
+            key: "down",
+            top: true,
+            bottom: false,
+            left: true,
+            right: true,
+            axis: "y",
+            sign: 1
+        },
+        {
+            key: "right",
+            top: true,
+            bottom: true,
+            left: true,
+            right: false,
+            axis: "x",
+            sign: 1
+        },
+        {
+            key: "left",
+            top: true,
+            bottom: true,
+            left: false,
+            right: true,
+            axis: "x",
+            sign: -1
+        }
+    ]
+
+    Variants {
+        model: root.showButton && root.targetScreens.length > 0 ? root.swipeEdges : []
+
+        PanelWindow {
+            id: strip
+
+            required property var modelData
+            property bool fired: false
+
+            screen: root.targetScreens[0]
+            color: "transparent"
+
+            WlrLayershell.namespace: "fw12-swipe-" + modelData.key
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            exclusionMode: ExclusionMode.Normal
+            exclusiveZone: 0
+
+            anchors {
+                top: strip.modelData.top
+                bottom: strip.modelData.bottom
+                left: strip.modelData.left
+                right: strip.modelData.right
+            }
+            implicitWidth: strip.modelData.axis === "x" ? root.swipeEdge : 0
+            implicitHeight: strip.modelData.axis === "y" ? root.swipeEdge : 0
+
+            DragHandler {
+                id: swipe
+
+                target: null
+
+                onActiveChanged: if (swipe.active)
+                    strip.fired = false
+
+                onActiveTranslationChanged: {
+                    if (!swipe.active || strip.fired)
+                        return;
+                    var t = swipe.activeTranslation;
+                    var along = strip.modelData.axis === "y" ? t.y : t.x;
+                    var across = strip.modelData.axis === "y" ? t.x : t.y;
+                    // Far enough, the right way, and more along the axis than
+                    // across it -- so a wander along the edge is not a swipe.
+                    if (along * strip.modelData.sign > root.swipeThreshold && Math.abs(along) > Math.abs(across)) {
+                        strip.fired = true;
+                        root.runAction(strip.modelData.key);
+                    }
+                }
+            }
+        }
+    }
+
     function savePosition() {
         posFile.setText(JSON.stringify({
             fx: root.fx,
@@ -237,7 +412,13 @@ Item {
             WlrLayershell.namespace: "fw12-osk-button"
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            exclusionMode: ExclusionMode.Ignore
+            // Reserve nothing, but respect what others reserve: the window is
+            // then the area left over by the bar and the keyboard, so the
+            // button can be dragged anywhere inside it and still never end up
+            // sitting on top of a key or a bar widget. The drag bounds come
+            // from the window's own size, so they follow for free.
+            exclusionMode: ExclusionMode.Normal
+            exclusiveZone: 0
 
             mask: Region {
                 item: button
