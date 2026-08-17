@@ -1782,3 +1782,85 @@ therefore fails on any scalable icon with "Unrecognized image file format", and
 icons installed into `hicolor/scalable/` silently do not render. PNGs at fixed
 sizes work. GTK4's `gtk_picture_new_for_filename()` is unaffected and loads SVG
 directly, which is how the Framework mark on the Super key renders.
+
+---
+
+## 10. The Framework 12 keyboard, measured
+
+The on-screen keyboard's proportions were guessed until now (1u = 4 sub-columns,
+height = width/3). This section replaces the guess with numbers taken off a
+top-down photograph of the machine's own keyboard, because "feels natural" is
+a geometry problem and geometry can be measured.
+
+### 10.1 Method
+
+The photo is a straight-on product shot, 1056x1290. Key faces sit at grey
+160-190 against a 205-240 chassis, so a threshold at 200 separates them
+cleanly. From there: a horizontal projection gives the row bands, a vertical
+projection inside each band gives the key edges, and runs split by a legend are
+merged when the break is under 4 px.
+
+### 10.2 What came out
+
+The six rows all begin at x=28 and end at x=833. **They share one left edge and
+one right edge**; the stagger is entirely the width of each row's leading key,
+not a ragged margin. Every row spans the same width, and that width is
+**14.25u** — the shift row makes it exact and unambiguous: 2u + 10x1u + 2.25u.
+
+Unit pitch is therefore 811/14.25 = **56.9 px**, key face 51 px, **gap 6 px =
+0.105u**. Vertical pitch measured 57 px, so the alphanumeric grid is square.
+
+| Row | Leading key | Body | Trailing key | Sum |
+|---|---|---|---|---|
+| function | esc 1.125 | 12 x 1 | del 1.125 | 14.25 |
+| number | ` 0.875 | 12 x 1 | backspace 1.375 | 14.25 |
+| top | tab 1.2 | 12 x 1 | \ 1.05 | 14.25 |
+| home | caps 1.5 | 11 x 1 | enter 1.75 | 14.25 |
+| bottom | shift 2.0 | 10 x 1 | shift 2.25 | 14.25 |
+| modifier | ctrl/fn/super/alt 4 x 1 | space 5 | altgr, ctrl, arrows | 14.25 |
+
+Measurement noise was +/-0.02u throughout, and every row summed to 14.25 within
+that. The function row is **0.7u tall** against 1u for the rest; the arrow
+cluster is a 1.25u column of half-height up/down between full-height left and
+right. Total height 5.7u, so the keyboard's aspect is exactly **2.5:1**.
+
+The photographed machine is US/ANSI, so there is no ISO 102nd key, and the
+Enter is a plain 1.75u home-row key rather than the tall ISO shape the previous
+layout drew. Enter's top-right corner does poke about 7 px up into the row gap
+on the real keyboard; that is not reproduced.
+
+### 10.3 Two implementation traps
+
+**GtkGrid cannot express this.** The fractions need 40 sub-columns per unit,
+i.e. 570 across, and at the rendered width of 845 px that is 1.48 px per
+column. GtkGrid allocates whole pixels, so a homogeneous 570-column grid gives
+1 px to some columns and 2 px to others; a span of 40 accumulates the error and
+the right-hand half of every row comes out visibly narrower. Replaced with a
+GtkFixed and one rounding per key edge.
+
+**A label will not let its key shrink.** GtkLabel's minimum width is its text,
+every key inherits that, and 570 columns multiply it: the keyboard came out
+1140 px wide when 845 was asked for. `PANGO_ELLIPSIZE_END` removes the floor.
+The half-height arrow keys had the same problem vertically -- their legends
+alone demanded more than half a row, and the whole keyboard grew from 338 px to
+399 px to satisfy them, quietly destroying the 2.5:1 proportion. They get a
+smaller font.
+
+### 10.4 Landscape and portrait
+
+Proportions are held in both; only the width changes.
+
+* **Portrait** (600x960 logical): full width, 600x240. A quarter of the screen.
+  Measured on the machine with the display rotated.
+* **Landscape** (1200x750): full width would give 1200x480, nearly two thirds
+  of the display. The height is capped at 45% and the keyboard is
+  **letterboxed** -- 845x338, centred -- rather than stretched. Stretching is
+  precisely what would stop it feeling like the real keyboard.
+
+Keys land at ~12.8 mm across in landscape and ~11.2 mm in portrait, both well
+past the ~9 mm where taps start being missed (section 5.4).
+
+Centring is done by the compositor: the surface is anchored to the bottom edge
+only and sized to 845, rather than anchored left and right and centred
+internally -- a widget cannot be held narrower than its natural width, so the
+internal approach does not work.

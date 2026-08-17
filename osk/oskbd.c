@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 
 /* Wayland modifier mask bits (wl_keyboard / xkb default keymap mod indices). */
 enum { MShift = 1, MCaps = 2, MCtrl = 4, MAlt = 8, MSuper = 64, MAltGr = 128 };
@@ -44,84 +45,125 @@ typedef struct Key {
   uint32_t down_code;  /* evdev code currently held down (0 = none) */
 } Key;
 
-/* The grid is 60 sub-columns wide and 10 sub-rows tall; each main key row is two
- * sub-rows high, so the arrow cluster can stack half-height ↑/↓ between
- * full-height ←/→.  Widths in sub-cols: 1u = 4. */
+/* ---------------------------------------------------------------------------
+ * Geometry, measured off a top-down photograph of the Framework Laptop 12
+ * keyboard rather than guessed. Method and numbers are in FINDINGS.md 10; the
+ * short version:
+ *
+ *   * every row spans exactly 14.25 keys' worth of width, and all six rows
+ *     share one left edge and one right edge. The stagger you see is entirely
+ *     the width of each row's leading key -- 1.125u esc, 0.875u backtick,
+ *     1.2u tab, 1.5u caps, 2u shift, 1u ctrl -- not a ragged margin;
+ *   * the alphanumeric grid is square: 1u horizontal pitch equals 1u vertical
+ *     pitch (56.9 px against 57 px on the photo);
+ *   * the function row is short: 0.7u tall against 1u for the rest;
+ *   * the gap between key faces is 0.105u, the same on both axes.
+ *
+ * The grid below is 40 sub-columns per key unit (570 across) and 10 sub-rows
+ * per key unit (57 down: 7 for the function row, 10 for each of the other
+ * five). 40 is the smallest divisor that makes every measured width a whole
+ * number -- the 1.2u tab needs fifths, the 0.875u backtick needs eighths.
+ *
+ * The modelled keyboard is the US/ANSI one in the photograph, so there is no
+ * ISO 102nd key. On a layout that has one, that character is unreachable from
+ * here; everything else follows the keymap as usual.
+ * ------------------------------------------------------------------------ */
+#define KU 40              /* sub-columns per key unit */
+#define KW 570             /* row width: 14.25u */
+
 static Key keys[] = {
-  /* Row 1 — number row (sub-row 0) */
-  {NULL,KEY_GRAVE,0,KT_CODE, 0,0,4,2, 0,NULL,0,0},                /* ^ ° */
-  {NULL,KEY_1,0,KT_CODE,  4,0,4,2, KEY_F1,"F1",0,0},
-  {NULL,KEY_2,0,KT_CODE,  8,0,4,2, KEY_F2,"F2",0,0},
-  {NULL,KEY_3,0,KT_CODE, 12,0,4,2, KEY_F3,"F3",0,0},
-  {NULL,KEY_4,0,KT_CODE, 16,0,4,2, KEY_F4,"F4",0,0},
-  {NULL,KEY_5,0,KT_CODE, 20,0,4,2, KEY_F5,"F5",0,0},
-  {NULL,KEY_6,0,KT_CODE, 24,0,4,2, KEY_F6,"F6",0,0},
-  {NULL,KEY_7,0,KT_CODE, 28,0,4,2, KEY_F7,"F7",0,0},
-  {NULL,KEY_8,0,KT_CODE, 32,0,4,2, KEY_F8,"F8",0,0},
-  {NULL,KEY_9,0,KT_CODE, 36,0,4,2, KEY_F9,"F9",0,0},
-  {NULL,KEY_0,0,KT_CODE, 40,0,4,2, KEY_F10,"F10",0,0},
-  {NULL,KEY_MINUS,0,KT_CODE, 44,0,4,2, KEY_F11,"F11",0,0},   /* ß ? */
-  {NULL,KEY_EQUAL,0,KT_CODE, 48,0,4,2, KEY_F12,"F12",0,0},   /* ´ ` */
-  {"⌫",KEY_BACKSPACE,0,KT_CODE, 52,0,8,2, 0,NULL,0,0},
+  /* Function row — sub-row 0, 7 sub-rows tall (0.7u).
+   * Media legends sit under Fn, as they do on the machine. */
+  {"esc",KEY_ESC,0,KT_CODE, 0,0,45,7, 0,NULL,0,0},
+  {"F1", KEY_F1,0,KT_CODE,  45,0,40,7, KEY_MUTE,"🔇",0,0},
+  {"F2", KEY_F2,0,KT_CODE,  85,0,40,7, KEY_VOLUMEDOWN,"🔉",0,0},
+  {"F3", KEY_F3,0,KT_CODE, 125,0,40,7, KEY_VOLUMEUP,"🔊",0,0},
+  {"F4", KEY_F4,0,KT_CODE, 165,0,40,7, KEY_PREVIOUSSONG,"⏮",0,0},
+  {"F5", KEY_F5,0,KT_CODE, 205,0,40,7, KEY_PLAYPAUSE,"⏯",0,0},
+  {"F6", KEY_F6,0,KT_CODE, 245,0,40,7, KEY_NEXTSONG,"⏭",0,0},
+  {"F7", KEY_F7,0,KT_CODE, 285,0,40,7, KEY_BRIGHTNESSDOWN,"🔅",0,0},
+  {"F8", KEY_F8,0,KT_CODE, 325,0,40,7, KEY_BRIGHTNESSUP,"🔆",0,0},
+  {"F9", KEY_F9,0,KT_CODE, 365,0,40,7, 0,NULL,0,0},
+  {"F10",KEY_F10,0,KT_CODE,405,0,40,7, 0,NULL,0,0},
+  {"F11",KEY_F11,0,KT_CODE,445,0,40,7, KEY_SYSRQ,"prt",0,0},
+  {"F12",KEY_F12,0,KT_CODE,485,0,40,7, 0,NULL,0,0},
+  {"del",KEY_DELETE,0,KT_CODE, 525,0,45,7, KEY_INSERT,"ins",0,0},
 
-  /* Row 2 (sub-row 2) */
-  {"Tab",KEY_TAB,0,KT_CODE, 0,2,6,2, 0,NULL,0,0},
-  {NULL,KEY_Q,0,KT_CODE,  6,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_W,0,KT_CODE, 10,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_E,0,KT_CODE, 14,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_R,0,KT_CODE, 18,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_T,0,KT_CODE, 22,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_Y,0,KT_CODE, 26,2,4,2, 0,NULL,0,0},   /* Z on QWERTZ */
-  {NULL,KEY_U,0,KT_CODE, 30,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_I,0,KT_CODE, 34,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_O,0,KT_CODE, 38,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_P,0,KT_CODE, 42,2,4,2, 0,NULL,0,0},
-  {NULL,KEY_LEFTBRACE,0,KT_CODE, 46,2,4,2, 0,NULL,0,0},   /* Ü */
-  {NULL,KEY_RIGHTBRACE,0,KT_CODE, 50,2,4,2, 0,NULL,0,0},  /* + */
-  {"⏎",KEY_ENTER,0,KT_CODE, 54,2,6,4, 0,NULL,0,0},        /* tall ISO Enter */
+  /* Number row — sub-row 7 */
+  {NULL,KEY_GRAVE,0,KT_CODE,   0,7,35,10, 0,NULL,0,0},
+  {NULL,KEY_1,0,KT_CODE,      35,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_2,0,KT_CODE,      75,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_3,0,KT_CODE,     115,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_4,0,KT_CODE,     155,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_5,0,KT_CODE,     195,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_6,0,KT_CODE,     235,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_7,0,KT_CODE,     275,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_8,0,KT_CODE,     315,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_9,0,KT_CODE,     355,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_0,0,KT_CODE,     395,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_MINUS,0,KT_CODE, 435,7,40,10, 0,NULL,0,0},
+  {NULL,KEY_EQUAL,0,KT_CODE, 475,7,40,10, 0,NULL,0,0},
+  {"⌫",KEY_BACKSPACE,0,KT_CODE, 515,7,55,10, 0,NULL,0,0},
 
-  /* Row 3 (sub-row 4) */
-  {"⇪",KEY_CAPSLOCK,MCaps,KT_MOD, 0,4,6,2, 0,NULL,0,0},
-  {NULL,KEY_A,0,KT_CODE,  6,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_S,0,KT_CODE, 10,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_D,0,KT_CODE, 14,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_F,0,KT_CODE, 18,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_G,0,KT_CODE, 22,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_H,0,KT_CODE, 26,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_J,0,KT_CODE, 30,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_K,0,KT_CODE, 34,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_L,0,KT_CODE, 38,4,4,2, 0,NULL,0,0},
-  {NULL,KEY_SEMICOLON,0,KT_CODE, 42,4,4,2, 0,NULL,0,0},   /* Ö */
-  {NULL,KEY_APOSTROPHE,0,KT_CODE, 46,4,4,2, 0,NULL,0,0},  /* Ä */
-  {NULL,KEY_BACKSLASH,0,KT_CODE, 50,4,4,2, 0,NULL,0,0},   /* # */
+  /* Top letter row — sub-row 17 */
+  {"tab",KEY_TAB,0,KT_CODE,   0,17,48,10, 0,NULL,0,0},
+  {NULL,KEY_Q,0,KT_CODE,     48,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_W,0,KT_CODE,     88,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_E,0,KT_CODE,    128,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_R,0,KT_CODE,    168,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_T,0,KT_CODE,    208,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_Y,0,KT_CODE,    248,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_U,0,KT_CODE,    288,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_I,0,KT_CODE,    328,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_O,0,KT_CODE,    368,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_P,0,KT_CODE,    408,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_LEFTBRACE,0,KT_CODE,  448,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_RIGHTBRACE,0,KT_CODE, 488,17,40,10, 0,NULL,0,0},
+  {NULL,KEY_BACKSLASH,0,KT_CODE,  528,17,42,10, 0,NULL,0,0},
 
-  /* Row 4 (sub-row 6) */
-  {"⇧",KEY_LEFTSHIFT,MShift,KT_MOD, 0,6,6,2, 0,NULL,0,0},
-  {NULL,KEY_102ND,0,KT_CODE, 6,6,4,2, 0,NULL,0,0},   /* < > | */
-  {NULL,KEY_Z,0,KT_CODE, 10,6,4,2, 0,NULL,0,0},      /* Y on QWERTZ */
-  {NULL,KEY_X,0,KT_CODE, 14,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_C,0,KT_CODE, 18,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_V,0,KT_CODE, 22,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_B,0,KT_CODE, 26,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_N,0,KT_CODE, 30,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_M,0,KT_CODE, 34,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_COMMA,0,KT_CODE, 38,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_DOT,0,KT_CODE, 42,6,4,2, 0,NULL,0,0},
-  {NULL,KEY_SLASH,0,KT_CODE, 46,6,4,2, 0,NULL,0,0},  /* - _ */
-  {"⇧",KEY_RIGHTSHIFT,MShift,KT_MOD, 50,6,10,2, 0,NULL,0,0},
+  /* Home row — sub-row 27 */
+  {"⇪",KEY_CAPSLOCK,MCaps,KT_MOD, 0,27,60,10, 0,NULL,0,0},
+  {NULL,KEY_A,0,KT_CODE,     60,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_S,0,KT_CODE,    100,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_D,0,KT_CODE,    140,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_F,0,KT_CODE,    180,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_G,0,KT_CODE,    220,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_H,0,KT_CODE,    260,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_J,0,KT_CODE,    300,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_K,0,KT_CODE,    340,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_L,0,KT_CODE,    380,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_SEMICOLON,0,KT_CODE,  420,27,40,10, 0,NULL,0,0},
+  {NULL,KEY_APOSTROPHE,0,KT_CODE, 460,27,40,10, 0,NULL,0,0},
+  {"⏎",KEY_ENTER,0,KT_CODE, 500,27,70,10, 0,NULL,0,0},
 
-  /* Row 5 — modifier row + arrow cluster (sub-rows 8-9) */
-  {"Strg",KEY_LEFTCTRL,MCtrl,KT_MOD, 0,8,6,2, 0,NULL,0,0},
-  {"Fn",0,0,KT_FN, 6,8,4,2, 0,NULL,0,0},
-  {NULL,KEY_LEFTMETA,MSuper,KT_SUPER, 10,8,4,2, 0,NULL,0,0},   /* Framework logo */
-  {"Alt",KEY_LEFTALT,MAlt,KT_MOD, 14,8,4,2, 0,NULL,0,0},
-  {"",KEY_SPACE,0,KT_CODE, 18,8,20,2, 0,NULL,0,0},
-  {"AltGr",KEY_RIGHTALT,MAltGr,KT_MOD, 38,8,4,2, 0,NULL,0,0},
-  {"Strg",KEY_RIGHTCTRL,MCtrl,KT_MOD, 42,8,6,2, 0,NULL,0,0},
-  {"←",KEY_LEFT,0,KT_CODE, 48,8,4,2, 0,NULL,0,0},        /* full height */
-  {"↑",KEY_UP,0,KT_CODE, 52,8,4,1, 0,NULL,0,0},          /* top half */
-  {"↓",KEY_DOWN,0,KT_CODE, 52,9,4,1, 0,NULL,0,0},        /* bottom half */
-  {"→",KEY_RIGHT,0,KT_CODE, 56,8,4,2, 0,NULL,0,0},       /* full height */
+  /* Bottom letter row — sub-row 37 */
+  {"⇧",KEY_LEFTSHIFT,MShift,KT_MOD, 0,37,80,10, 0,NULL,0,0},
+  {NULL,KEY_Z,0,KT_CODE,     80,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_X,0,KT_CODE,    120,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_C,0,KT_CODE,    160,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_V,0,KT_CODE,    200,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_B,0,KT_CODE,    240,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_N,0,KT_CODE,    280,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_M,0,KT_CODE,    320,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_COMMA,0,KT_CODE,360,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_DOT,0,KT_CODE,  400,37,40,10, 0,NULL,0,0},
+  {NULL,KEY_SLASH,0,KT_CODE,440,37,40,10, 0,NULL,0,0},
+  {"⇧",KEY_RIGHTSHIFT,MShift,KT_MOD, 480,37,90,10, 0,NULL,0,0},
+
+  /* Modifier row and arrow cluster — sub-row 47.
+   * ↑/↓ stack half-height in one 1.25u column between full-height ←/→, which
+   * is how the cluster is shaped on the machine. */
+  {"ctrl",KEY_LEFTCTRL,MCtrl,KT_MOD,  0,47,40,10, 0,NULL,0,0},
+  {"fn",0,0,KT_FN,                   40,47,40,10, 0,NULL,0,0},
+  {NULL,KEY_LEFTMETA,MSuper,KT_SUPER, 80,47,40,10, 0,NULL,0,0},  /* Framework logo */
+  {"alt",KEY_LEFTALT,MAlt,KT_MOD,   120,47,40,10, 0,NULL,0,0},
+  {"",KEY_SPACE,0,KT_CODE,          160,47,200,10, 0,NULL,0,0},
+  {"alt gr",KEY_RIGHTALT,MAltGr,KT_MOD, 360,47,40,10, 0,NULL,0,0},
+  {"ctrl",KEY_RIGHTCTRL,MCtrl,KT_MOD,   400,47,40,10, 0,NULL,0,0},
+  {"←",KEY_LEFT,0,KT_CODE,  440,47,40,10, 0,NULL,0,0},
+  {"↑",KEY_UP,0,KT_CODE,    480,47,50,5,  0,NULL,0,0},
+  {"↓",KEY_DOWN,0,KT_CODE,  480,52,50,5,  0,NULL,0,0},
+  {"→",KEY_RIGHT,0,KT_CODE, 530,47,40,10, 0,NULL,0,0},
 };
 static const int NKEYS = sizeof keys / sizeof keys[0];
 
@@ -282,10 +324,16 @@ static void on_cancel(GtkGesture *g, GdkEventSequence *seq, gpointer u) {
   (void)g;(void)seq; key_up((Key *)u);
 }
 
-static const char *CSS =
+/* Filled in at runtime. The gap between key faces on the machine is 0.105u, so
+ * it has to scale with the key rather than sit at a fixed 2 px: at the sizes
+ * this thing actually renders, a fixed gap reads as a hairline in landscape
+ * and a canyon in portrait. Margin is half the gap, because two adjacent keys
+ * each contribute one. */
+static const char *CSS_FMT =
   "window { background: rgba(20,20,20,0.92); }"
-  ".key { margin: 2px; border-radius: 6px; background: #2b2b2b; color: #eee;"
-  "       font-size: 18px; }"
+  ".key { border-radius: %dpx; background: #2b2b2b; color: #eee;"
+  "       font-size: %dpx; }"
+  ".key.half { font-size: %dpx; }"
   ".key label { color: #eee; }"
   ".key.pressed { background: #555; }"
   ".key.active-mod { background: #3584e4; }"
@@ -332,40 +380,87 @@ static void on_activate(GtkApplication *app, gpointer u) {
   gtk_layer_set_layer(GTK_WINDOW(win), GTK_LAYER_SHELL_LAYER_TOP);
   gtk_layer_set_keyboard_mode(GTK_WINDOW(win), GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
   gtk_layer_set_namespace(GTK_WINDOW(win), "fw12tab-osk");
-  gtk_layer_set_anchor(GTK_WINDOW(win), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
-  gtk_layer_set_anchor(GTK_WINDOW(win), GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
   gtk_layer_set_anchor(GTK_WINDOW(win), GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
 
-  GtkCssProvider *css = gtk_css_provider_new();
-  gtk_css_provider_load_from_string(css, CSS);
-  gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-      GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  /* GtkFixed, not GtkGrid.
+   *
+   * The measured layout needs 40 sub-columns per key, and 570 of those across
+   * an 845 px keyboard is 1.48 px each. GtkGrid works in whole pixels, so a
+   * homogeneous 570-column grid hands out 1 px to some columns and 2 px to
+   * others; spans of 40 accumulate that error and the right-hand half of every
+   * row comes out visibly narrower than the left. Seen, not guessed.
+   *
+   * Placing each key at an exact pixel rectangle computed from the real
+   * numbers rounds once per edge instead, so keys stay within a pixel of the
+   * geometry and adjacent keys always share an edge. */
+  GtkWidget *grid = gtk_fixed_new();
 
-  GtkWidget *grid = gtk_grid_new();
-  gtk_grid_set_row_homogeneous(GTK_GRID(grid), TRUE);
-  gtk_grid_set_column_homogeneous(GTK_GRID(grid), TRUE);
-  gtk_widget_set_vexpand(grid, TRUE);
-  gtk_widget_set_hexpand(grid, TRUE);
-
-  /* Height: full width (anchored L+R); height ~ width/3 so the keys are roughly
-   * square like the real keyboard, capped at half the screen so it is always a
-   * bottom strip and never fills the display. */
-  int kbd_h = 320;
+  /* Size, keeping the machine's proportions in both orientations.
+   *
+   * The board is 14.25u wide and 5.7u tall, so its aspect is exactly 2.5:1.
+   * Full screen width is the obvious choice and is right in portrait: 750 px
+   * across gives a 300 px strip, a quarter of the display. In landscape the
+   * same rule gives 1200 x 480, which is nearly two thirds of the screen and
+   * far too much.
+   *
+   * So: full width unless that exceeds MAXFRAC of the display height, and if
+   * it does, letterbox -- shrink to the cap and centre, rather than squashing
+   * the keys out of shape to fill the width. Keeping 2.5:1 is the whole point;
+   * a stretched keyboard is exactly what stops it feeling like the real one.
+   *
+   * At the cap in landscape the keys come out ~12.8 mm across, and in portrait
+   * ~11.2 mm -- both comfortably past the ~9 mm where taps start being missed
+   * (section 5.4). */
+  const double ASPECT  = 14.25 / 5.7;   /* 2.5 */
+  const double MAXFRAC = 0.45;
+  int kbd_w = 1200, kbd_h = 480;
   {
     GListModel *mons = gdk_display_get_monitors(gdk_display_get_default());
     GdkMonitor *m0 = mons ? g_list_model_get_item(mons, 0) : NULL;
     if (m0) {
       GdkRectangle geo; gdk_monitor_get_geometry(m0, &geo);
-      kbd_h = geo.width / 3;
-      int cap = geo.height * 2 / 5;   /* never taller than 40% of the screen */
-      if (kbd_h > cap) kbd_h = cap;
+      kbd_w = geo.width;
+      kbd_h = (int)lround(kbd_w / ASPECT);
+      int cap = (int)lround(geo.height * MAXFRAC);
+      if (kbd_h > cap) {
+        kbd_h = cap;
+        kbd_w = (int)lround(kbd_h * ASPECT);
+      }
       g_object_unref(m0);   /* g_list_model_get_item() returns an owned ref */
     }
     const char *he = g_getenv("FW12TAB_OSK_HEIGHT");
-    if (he && *he) kbd_h = atoi(he);
+    if (he && *he) { kbd_h = atoi(he); kbd_w = (int)lround(kbd_h * ASPECT); }
   }
-  gtk_window_set_default_size(GTK_WINDOW(win), -1, kbd_h);
-  gtk_widget_set_size_request(win, -1, kbd_h);
+
+  /* Anchored to the bottom edge only, so the surface is exactly kbd_w wide and
+   * the compositor centres it. Anchoring left and right as well would stretch
+   * it across the display, and a widget inside cannot be held narrower than its
+   * natural width, so centring within a full-width window does not work. */
+  gtk_widget_set_size_request(grid, kbd_w, kbd_h);
+  gtk_window_set_default_size(GTK_WINDOW(win), kbd_w, kbd_h);
+  gtk_widget_set_size_request(win, kbd_w, kbd_h);
+
+  /* Key metrics follow the rendered size rather than a constant. The gap
+   * between key faces is 0.105u on the machine; here it is applied as an inset
+   * when each key is placed, not as a CSS margin, so that the geometry stays
+   * exactly what was measured. */
+  double unit   = kbd_w / 14.25;
+  int    gap_px = (int)lround(unit * 0.105); if (gap_px < 2) gap_px = 2;
+  {
+    GtkCssProvider *css = gtk_css_provider_new();
+    int radius = (int)lround(unit * 0.105);
+    int fontpx = (int)lround(unit * 0.30);
+    /* The stacked arrows are half a row tall. Left at the normal size their
+     * labels alone demand more height than half a row, and GtkGrid grows the
+     * whole keyboard to satisfy them -- which silently breaks the 2.5:1
+     * proportion this is all in aid of. Measured: 399 px tall instead of 338. */
+    int fonthalf = (int)lround(unit * 0.22);
+    char *sheet = g_strdup_printf(CSS_FMT, radius, fontpx, fonthalf);
+    gtk_css_provider_load_from_string(css, sheet);
+    g_free(sheet);
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+        GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  }
   /* Reserve the strip so tiled windows shrink to sit ABOVE the keyboard instead
    * of being covered by it (same mechanism waybar uses). */
   gtk_layer_set_exclusive_zone(GTK_WINDOW(win), kbd_h);
@@ -402,6 +497,12 @@ static void on_activate(GtkApplication *app, gpointer u) {
       }
     } else {
       child = gtk_label_new(k->label ? k->label : "");
+      /* Without this a label refuses to be narrower than its text, every key
+       * inherits that as a minimum, and 570 homogeneous columns multiply it
+       * into a keyboard far wider than the proportions asked for -- measured
+       * 1140 px where 845 was wanted. Ellipsising lets the grid be the size we
+       * computed; legends are sized to fit it anyway. */
+      gtk_label_set_ellipsize(GTK_LABEL(child), PANGO_ELLIPSIZE_END);
       k->lbl = child;   /* derived keys get their symbol from relabel_keys() below */
     }
     gtk_widget_set_hexpand(child, TRUE);
@@ -415,7 +516,16 @@ static void on_activate(GtkApplication *app, gpointer u) {
     g_signal_connect(gc, "released", G_CALLBACK(on_released), k);
     g_signal_connect(gc, "cancel", G_CALLBACK(on_cancel), k);
     gtk_widget_add_controller(key, GTK_EVENT_CONTROLLER(gc));
-    gtk_grid_attach(GTK_GRID(grid), key, k->col, k->row, k->wspan, k->hspan);
+    if (k->hspan * 2 <= 10) gtk_widget_add_css_class(key, "half");
+
+    /* Slot edges first, then inset by half a gap on each side, so that the
+     * gap between two neighbours is exactly one gap and no seam drifts. */
+    double sx = (double)kbd_w / KW, sy = (double)kbd_h / 57.0;
+    int x0 = (int)lround(k->col * sx),  x1 = (int)lround((k->col + k->wspan) * sx);
+    int y0 = (int)lround(k->row * sy),  y1 = (int)lround((k->row + k->hspan) * sy);
+    int inset = gap_px / 2;
+    gtk_widget_set_size_request(key, (x1 - x0) - 2 * inset, (y1 - y0) - 2 * inset);
+    gtk_fixed_put(GTK_FIXED(grid), key, x0 + inset, y0 + inset);
     k->button = key;
   }
 
