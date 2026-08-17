@@ -228,9 +228,16 @@ Item {
     // hyprland-1 words: `hyprctl dispatch workspace e+1` fails with a Lua
     // syntax error and does nothing. This is the form Omarchy's own workspace
     // widget uses.
-    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'"
-    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    // "-1"/"+1" rather than "e-1"/"e+1": the e- forms only visit workspaces
+    // that already have something on them, which makes the gesture skip past
+    // empty ones instead of walking the whole set.
+    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"-1\" })'"
+    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'"
     readonly property int swipeEdge: settings.swipeEdge !== undefined ? settings.swipeEdge : Style.space(16)
+    // The bottom strip is the one you have to find by feel -- when the
+    // keyboard is out it is the band between the keys and the window above
+    // them -- so it gets twice the depth of the side strips.
+    readonly property int swipeEdgeBottom: settings.swipeEdgeBottom !== undefined ? settings.swipeEdgeBottom : Style.space(32)
     // Short on purpose. A strip is 16 px, so the finger is off it almost at
     // once and the rest of the travel is unguided; asking for 60 px made the
     // gesture feel like a drag rather than a flick.
@@ -297,40 +304,52 @@ Item {
     // exclusive zones, which means the bottom strip sits above the keyboard
     // when it is out, and the top strip below the bar -- never on top of
     // either, and with no geometry duplicated here to keep in step.
-    // Three strips, not four. The bar owns the real top edge -- a strip placed
-    // under it is unreachable, because a swipe that starts at the top of the
-    // screen starts on the bar and the bar gets the gesture. So both vertical
-    // actions live on the bottom strip, told apart by direction.
+    // Three strips. The bar owns the real top edge -- a swipe that starts at
+    // the top of the screen starts on the bar and the bar gets it -- so there
+    // is no top strip, and each remaining strip carries whatever directions it
+    // has room for.
+    //
+    // The menu lives on a downward swipe at either side edge rather than at
+    // the bottom: a downward swipe that starts on the bottom strip has 16 px
+    // of screen left before the finger runs off the display, which is less
+    // than the threshold, so it could never complete. The side strips are full
+    // height and have room to spare.
     readonly property var swipeEdges: [
         {
             name: "bottom",
-            top: false,
-            bottom: true,
-            left: true,
-            right: true,
-            axis: "y",
-            negKey: "up",
-            posKey: "down"
+            band: "h",
+            aTop: false,
+            aBottom: true,
+            aLeft: true,
+            aRight: true,
+            up: "up",
+            down: "",
+            left: "",
+            right: ""
         },
         {
             name: "left",
-            top: true,
-            bottom: true,
-            left: true,
-            right: false,
-            axis: "x",
-            negKey: "",
-            posKey: "right"
+            band: "v",
+            aTop: true,
+            aBottom: true,
+            aLeft: true,
+            aRight: false,
+            up: "",
+            down: "down",
+            left: "",
+            right: "right"
         },
         {
             name: "right",
-            top: true,
-            bottom: true,
-            left: false,
-            right: true,
-            axis: "x",
-            negKey: "left",
-            posKey: ""
+            band: "v",
+            aTop: true,
+            aBottom: true,
+            aLeft: false,
+            aRight: true,
+            up: "",
+            down: "down",
+            left: "left",
+            right: ""
         }
     ]
 
@@ -353,13 +372,13 @@ Item {
             exclusiveZone: 0
 
             anchors {
-                top: strip.modelData.top
-                bottom: strip.modelData.bottom
-                left: strip.modelData.left
-                right: strip.modelData.right
+                top: strip.modelData.aTop
+                bottom: strip.modelData.aBottom
+                left: strip.modelData.aLeft
+                right: strip.modelData.aRight
             }
-            implicitWidth: strip.modelData.axis === "x" ? root.swipeEdge : 0
-            implicitHeight: strip.modelData.axis === "y" ? root.swipeEdge : 0
+            implicitWidth: strip.modelData.band === "v" ? root.swipeEdge : 0
+            implicitHeight: strip.modelData.band === "h" ? root.swipeEdgeBottom : 0
 
             DragHandler {
                 id: swipe
@@ -373,13 +392,13 @@ Item {
                     if (!swipe.active || strip.fired)
                         return;
                     var t = swipe.activeTranslation;
-                    var along = strip.modelData.axis === "y" ? t.y : t.x;
-                    var across = strip.modelData.axis === "y" ? t.x : t.y;
-                    // Far enough, and more along the strip's axis than across
-                    // it, so a wander along the edge is not a swipe.
-                    if (Math.abs(along) < root.swipeThreshold || Math.abs(along) <= Math.abs(across))
+                    // Whichever axis the finger committed to decides which of
+                    // the strip's four directions this is.
+                    var horizontal = Math.abs(t.x) > Math.abs(t.y);
+                    var along = horizontal ? t.x : t.y;
+                    if (Math.abs(along) < root.swipeThreshold)
                         return;
-                    var key = along < 0 ? strip.modelData.negKey : strip.modelData.posKey;
+                    var key = horizontal ? (along < 0 ? strip.modelData.left : strip.modelData.right) : (along < 0 ? strip.modelData.up : strip.modelData.down);
                     if (key === "")
                         return;
                     strip.fired = true;

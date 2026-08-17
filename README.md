@@ -90,34 +90,42 @@ Unfolding puts the keyboard away and takes the button with it.
 
 ### Swipes
 
-Three edge strips, active only while folded. The bottom one carries both
-vertical gestures:
+Three edge strips, active only while folded:
 
 | Swipe | Default |
 |---|---|
 | up, from the bottom edge | show/hide the keyboard |
-| down, on the bottom strip | `omarchy-menu` |
+| down, on either side edge | `omarchy-menu` |
 | right, from the left edge | previous workspace |
 | left, from the right edge | next workspace |
 
-There is deliberately no top-edge strip: the bar owns the real top edge, so a
-swipe that starts there starts on the bar and the bar gets it.
+Two placements are deliberate and worth knowing:
 
-The strips are 16 px and sit in whatever space the bar and keyboard are not
-using, so one is never on top of a key or a bar widget — when the keyboard is
-out, the bottom strip moves up to sit just above it.
+**There is no top-edge strip.** The bar owns the real top edge, so a swipe that
+starts at the top of the screen starts on the bar and the bar gets it.
 
-Change them in your plugin entry in `~/.config/omarchy/shell.json` — the same
-file and the same place Omarchy keeps every other plugin's settings:
+**The menu is on the side edges, not the bottom.** A downward swipe starting on
+the bottom strip has only the height of the strip before the finger runs off
+the display — less than the threshold, so it could never complete. The side
+strips are full height.
+
+The side strips are 16 px; the bottom one is 32, because it is the one you have
+to find by feel — when the keyboard is out it is the band between the keys and
+the window above them. Strips sit in whatever space the bar and keyboard are
+not using, so one is never on top of a key or a bar widget.
+
+Change any of it in your plugin entry in `~/.config/omarchy/shell.json` — the
+same file and the same place Omarchy keeps every other plugin's settings:
 
 ```json
 {
   "id": "drotiesel.fw12-tablet",
   "swipeUp": "@keyboard",
   "swipeDown": "omarchy-menu",
-  "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
-  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'",
+  "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"-1\" })'",
+  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'",
   "swipeEdge": 16,
+  "swipeEdgeBottom": 32,
   "swipeThreshold": 30
 }
 ```
@@ -126,11 +134,12 @@ file and the same place Omarchy keeps every other plugin's settings:
 a value to `""` to disable that swipe. The file is watched, so changes take
 effect without restarting anything.
 
-Note the shape of those workspace commands. **`hyprctl dispatch` takes a Lua
+Two things about those workspace commands. **`hyprctl dispatch` takes a Lua
 expression on Omarchy 4**, not the words you would use on a hyprlang config —
-`hyprctl dispatch workspace e+1` fails with a Lua syntax error and silently
-does nothing. `hyprctl dispatch 'hl.dsp.focus({ workspace = "e+1" })'` is the
-form Omarchy's own workspace widget uses.
+`hyprctl dispatch workspace +1` fails with a Lua syntax error and silently does
+nothing. And **`+1`/`-1` rather than `e+1`/`e-1`**: the `e` forms only visit
+workspaces that already have something on them, so the gesture skips past empty
+ones instead of walking the whole set.
 
 ### Making it always visible
 
