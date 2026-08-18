@@ -383,6 +383,7 @@ static void on_pressed(GtkGestureClick *g, int np, double x, double y, gpointer 
       k->down_code = (fn_active && k->fn_code) ? k->fn_code : k->code;
       send_mods();
       send_key(k->down_code, WL_KEYBOARD_KEY_STATE_PRESSED);
+      arm_watchdog();
       break;
   }
   wl_display_flush(wl_dpy);
