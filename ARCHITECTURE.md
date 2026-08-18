@@ -20,8 +20,9 @@ fix for a firmware probe race that otherwise costs the tablet switch on some
 boots.
 
 Plus **the keyboard**: `fw12-oskbd`, a GTK4 layer-shell board laid out like the
-machine's own, and a shell plugin that is one draggable button to show and
-hide it. See Component B.
+machine's own, and a shell plugin that is one draggable button to show and hide
+it, four edge-swipe strips, and the focus handling that makes a resting hand
+harmless. See Component B.
 
 ---
 
@@ -168,6 +169,68 @@ rotation mid-drag therefore cannot desync the button from its stored position.
 is attached to an edge and takes its shape from the theme to match its
 neighbours. This floats in the middle of whatever you are using, with nothing
 to match.
+### Focus while folded
+
+Folding sets `input:follow_mouse = 2`; unfolding puts it back. Without it,
+keyboard focus detaches from the window being typed into for as long as a
+finger rests on the keyboard: with `follow_mouse = 1` the surface under the
+finger is a layer surface, so there is no window to focus and the current one is
+simply dropped. Measured on the event socket — `activewindow` goes *empty* on
+touch-down and returns on release (§11). A tap is too short to notice; a swipe
+or a resting hand holds it, and everything typed in that time goes nowhere.
+
+The change is made by Component A, not by the keyboard, because it has to be
+reverted on unfold whether or not the keyboard was ever shown.
+
+### The palm guard
+
+A hand laid on the board breaks it two ways, and both were seen in one sitting
+(§12). A modifier under the heel of the hand *locks*, because the second of two
+imperfect contacts lands inside the double-tap window; everything after it
+carries Ctrl or AltGr. And a key never comes up, because `GtkGestureClick`
+tracks one touch sequence at a time — a second contact on the same key can end
+the first without a `released`, so the key stays down and the compositor repeats
+it.
+
+Three contacts inside 150 ms is a hand and not fingers: drop them all, clear
+every latch, and stay quiet until every contact has lifted. Separately, the
+stuck-key watchdog does not time keys out — holding backspace is legitimate — it
+asks GTK whether the held key's gesture is still active and frees the key only
+when it is not. That is the actual fault condition, so nothing legitimate is cut
+short.
+
+### Edge gestures, without a compositor plugin
+
+Hyprland's gesture system is trackpad-only; touchscreen gestures normally mean
+the `hyprgrass` plugin, which is AUR-only and, being a compositor plugin, must
+be rebuilt against every Hyprland release — the exact fragility this project set
+out to avoid.
+
+Four thin layer surfaces do the job as ordinary Wayland clients, so a Hyprland
+update cannot break them: swipe up from the bottom for the keyboard, down on
+either side edge for `omarchy-menu`, sideways from the left and right edges for
+the neighbouring workspace. All four are configurable, and all four exist only
+while folded.
+
+Their placement solves itself with `exclusionMode: Normal` and
+`exclusiveZone: 0` — reserve nothing, respect what others reserve. The
+compositor puts each strip in whatever space the bar and the keyboard are not
+using, so a strip can never sit on top of a key and the button can never be
+dragged onto one. No geometry is duplicated and nothing has to be kept in step
+(§13).
+
+There is no top strip: the bar owns the real top edge and gets the gesture
+first. The menu is on the side edges rather than the bottom because a downward
+swipe starting on the bottom strip has only the strip's own height before the
+finger leaves the display, so it could never reach the threshold.
+
+### `SUPER + B`, bound in both modes
+
+The keyboard's Framework key is a real Super, so the most useful thing the bind
+does is the reverse of what it sounds like: dismissing the on-screen keyboard
+*from* the on-screen keyboard. Two taps, no aiming for a 32 px strip. It is in
+Component A's Lua rather than the plugin because that is where Hyprland binds
+live; it calls the plugin over `omarchy-shell shell call`.
 
 ### The keyboard we wrote, and dropped
 
@@ -216,27 +279,48 @@ Neither is needed at runtime by Component A, which degrades gracefully: with no
 switch device the binds simply never fire, and the module stays in laptop mode.
 
 ---
-
 ## Known limitations, stated up front
 
+- **Nothing knows when a text field gains focus.** fcitx5 holds the single
+  `input-method-v2` slot (§8.1), so the keyboard cannot pop up by itself. It is
+  summoned by the button, the bottom-edge swipe, or `SUPER + B`. This is a
+  deliberate trade, not an oversight — see "Why a button rather than automatic
+  pop-up".
 - **The bar is hard to hit by touch** (§5.4) — 6.9 mm targets, and a missed tap
-  reaching the wallpaper opens the picker on double-click. Reported upstream;
-  out of scope here by decision.
-- **One boot in N has no switch** until the initramfs fix is applied. Now
-  applied on this machine, after it cost a boot.
+  reaching the wallpaper opens the picker on double-click. Out of scope here by
+  decision; worth reporting upstream.
+- **One boot in N has no switch** until the initramfs fix is applied. Applied on
+  this machine, after it cost a boot.
+- **Cosmetic, on rotation:** the wallpaper blanks for a moment, and in portrait
+  it is cropped to roughly a third of the image. Both are Omarchy's own
+  background plugin (`asynchronous: true` on a transparent window, and
+  `PreserveAspectCrop` on a 16:9 wallpaper in a 750x1200 frame), not ours.
+  Diagnosed, left alone by decision.
 
 ---
 
-## Build order
+## Where this stands
 
-1. ~~`fw12d` skeleton~~ — replaced by Component A.
-2. Component A: verify live on hardware (fold, four orientations, SUPER+R lock,
-   `hyprctl reload` idempotency, suspend/resume).
-3. System units + initramfs fix; reboot several times to confirm the race is
-   closed. **Done** — installed after the race cost a real boot.
-4. ~~On-screen keyboard~~ — built, rejected, removed. Component B instead.
-5. Component B: verify the button on hardware (tap to toggle, drag to move,
-   position survives a shell restart and a rotation). **Partly done** — the
-   window, the mask, the process chain and the keyboard itself are verified;
-   tap and drag need a finger.
-6. Packaging: PKGBUILD, README, marketplace submission.
+**Working on hardware, verified with a finger:**
+
+| | |
+|---|---|
+| Component A | fold in and out, all four orientations, `SUPER + R` lock, `hyprctl reload` idempotency, suspend/resume |
+| System fix | installed; the probe race has not recurred |
+| Keyboard | types, keybinds fire, AltGr and dead keys work, layout follows `input:kb_layout`, geometry matches the real board and re-lays out on rotation |
+| Button | tap toggles, drag moves it, position survives a rotation and a shell restart |
+| Swipes | all four edges; strips place themselves around the bar and the keyboard |
+| Focus | survives a resting hand while folded |
+| Palm guard | a hand on the board no longer locks a modifier or sticks a key |
+
+**Left to do:**
+
+1. **Packaging.** A PKGBUILD (or a plain `install.sh` covering all three parts),
+   so the README's four manual steps become one command.
+2. **Marketplace submission** of the shell plugin, once packaging exists.
+3. **Layout check on US International**, when the new physical keyboard lands.
+   Expected to be a one-line config change and no code work — the keyboard reads
+   its layout from Hyprland — but it is unverified until it is verified.
+4. **A second machine.** Every measurement here is from one Framework 12. The
+   accelerometer axis convention in particular is not guessable and may differ
+   between units; the module says so where it matters, but nobody has tried it.
