@@ -22,6 +22,13 @@ DATADIR    ?= $(PREFIX)/share/fw12-tablet
 
 PKGS        = gtk4 gtk4-layer-shell-0 xkbcommon wayland-client
 CFLAGS     ?= -O2 -Wall -Wextra
+# The key table sets its trailing runtime fields by omission, on purpose, in
+# every one of its ~90 rows. -Wextra objects to each one, and those eighty
+# lines of noise are where a real "arm_watchdog defined but not used" sat
+# unread until a build from a clean clone put it at the bottom of the output.
+# Turning off the one warning that cannot ever be true here is what makes the
+# rest of them worth reading.
+CFLAGS     += -Wno-missing-field-initializers
 CFLAGS     += $(shell pkg-config --cflags $(PKGS))
 LDLIBS      = $(shell pkg-config --libs $(PKGS)) -lm
 
