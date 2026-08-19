@@ -206,11 +206,11 @@ the `hyprgrass` plugin, which is AUR-only and, being a compositor plugin, must
 be rebuilt against every Hyprland release — the exact fragility this project set
 out to avoid.
 
-Four thin layer surfaces do the job as ordinary Wayland clients, so a Hyprland
-update cannot break them: swipe up from the bottom for the keyboard, down on
-either side edge for `omarchy-menu`, sideways from the left and right edges for
-the neighbouring workspace. All four are configurable, and all four exist only
-while folded.
+Three thin layer surfaces do the job as ordinary Wayland clients, so a Hyprland
+update cannot break them, and they carry four gestures between them: swipe up
+from the bottom for the keyboard, down on either side edge for `omarchy-menu`,
+sideways from the left and right edges for the neighbouring workspace. All four
+are configurable, and the strips exist only while folded.
 
 Their placement solves itself with `exclusionMode: Normal` and
 `exclusiveZone: 0` — reserve nothing, respect what others reserve. The
@@ -309,18 +309,32 @@ switch device the binds simply never fire, and the module stays in laptop mode.
 | System fix | installed; the probe race has not recurred |
 | Keyboard | types, keybinds fire, AltGr and dead keys work, layout follows `input:kb_layout`, geometry matches the real board and re-lays out on rotation |
 | Button | tap toggles, drag moves it, position survives a rotation and a shell restart |
-| Swipes | all four edges; strips place themselves around the bar and the keyboard |
+| Swipes | all four gestures; strips place themselves around the bar and the keyboard |
 | Focus | survives a resting hand while folded |
 | Palm guard | a hand on the board no longer locks a modifier or sticks a key |
+| Install | `omarchy plugin add` from a clone, then `install.sh`, both from a clone and from the plugin directory |
+| Layouts | `de` in daily use; `us`/`intl` checked from a screenshot of the running board |
+
+**Packaging.** There is no PKGBUILD and there should not be one. Omarchy
+installs a third-party plugin by cloning its git repo into
+`~/.config/omarchy/plugins/<id>/`, so the manifest sits at the repo root and
+`omarchy plugin add` is the install path. The parts a package manager would
+own — one binary into `~/.local/bin`, one Lua file into `~/.config/hypr` — are
+per-user, need no root, and are done by `install.sh`, which is idempotent and
+doubles as the upgrade step. A PKGBUILD would add a second, partly overlapping
+mechanism for one binary. There is also no marketplace to submit to: Omarchy 4
+has none, and a git URL is the whole distribution story.
 
 **Left to do:**
 
-1. **Packaging.** A PKGBUILD (or a plain `install.sh` covering all three parts),
-   so the README's four manual steps become one command.
-2. **Marketplace submission** of the shell plugin, once packaging exists.
-3. **Layout check on US International**, when the new physical keyboard lands.
-   Expected to be a one-line config change and no code work — the keyboard reads
-   its layout from Hyprland — but it is unverified until it is verified.
-4. **A second machine.** Every measurement here is from one Framework 12. The
-   accelerometer axis convention in particular is not guessable and may differ
-   between units; the module says so where it matters, but nobody has tried it.
+1. **A second machine.** Every measurement here is from one Framework 12. The
+   accelerometer axis convention is the part most likely to differ — it depends
+   on how the panel and its sensor are mounted — so it is now a single table at
+   the top of the Lua with a comment saying which pair to swap for each of the
+   three ways it can come out wrong. That reduces the cost of being wrong; it
+   does not verify anything.
+2. **The physical US International keyboard**, when it arrives — to confirm the
+   on-screen board and the real one agree key for key, which a screenshot
+   cannot show.
+3. **Nothing else is known to be outstanding.** The remaining known defects are
+   listed above under limitations, and both are other people's code.

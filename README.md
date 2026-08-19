@@ -24,64 +24,66 @@ behind each decision.
 
 ## Install
 
-### 1. Rotation
+It is a git repo with a `manifest.json` at its root, which is what Omarchy's
+plugin installer expects, so:
 
 ```bash
-cp lua/fw12-tablet.lua ~/.config/hypr/
+omarchy plugin add https://github.com/mechanicsunlocked/fw12-tablet.git --enable --yes
+~/.config/omarchy/plugins/drotiesel.fw12-tablet/install.sh
 ```
 
-Then add one line to `~/.config/hypr/hyprland.lua`:
+The first command clones and enables the button. The second builds the
+keyboard, installs the rotation module, adds one `require` line to your
+Hyprland config, and restarts the shell. It needs no root, touches nothing
+outside `$HOME`, and is also how you upgrade — run it again after
+`omarchy plugin update drotiesel.fw12-tablet`.
 
-```lua
-require("hypr.fw12-tablet")
-```
-
-`SUPER + R` locks and unlocks auto-rotation while folded; the lock clears when
-you unfold. `SUPER + B` toggles the on-screen keyboard.
-
-`SUPER + B` is bound always, not only while folded, because its most useful job
-is the reverse of what it sounds like: dismissing the on-screen keyboard *from*
-the on-screen keyboard, whose Framework key is a real Super. Two taps, and no
-aiming. `SUPER + K` would have been the obvious letter but it is Omarchy's own
-keybindings menu; on a stock install the free `SUPER` letters are A B D E H I M
-N Q U Y Z, and `SUPER + CTRL + <anything>` is completely unused.
-
-### 2. Keyboard
-
-Needs `gtk4`, `gtk4-layer-shell`, `libxkbcommon` and `wayland` — all in
-`extra`. Installs into `~/.local`, no root:
+Two commands rather than one because Omarchy's installer deliberately never
+runs code from a plugin it has just cloned, which is the right call. So the
+second one is yours to read first:
 
 ```bash
-make -C osk
-make -C osk install
+less ~/.config/omarchy/plugins/drotiesel.fw12-tablet/install.sh
 ```
 
-`make -C osk install PREFIX=/usr` as root puts it in the usual place instead.
-
-### 3. Keyboard button
+Or from an ordinary clone, if you would rather not install it as a plugin at
+all until you have looked at it:
 
 ```bash
-mkdir -p ~/.config/omarchy/plugins/drotiesel.fw12-tablet
-cp plugin/manifest.json plugin/Panel.qml ~/.config/omarchy/plugins/drotiesel.fw12-tablet/
-
-omarchy-shell shell rescanPlugins
-omarchy-shell shell setPluginEnabled drotiesel.fw12-tablet true
-omarchy-restart-shell
+git clone https://github.com/mechanicsunlocked/fw12-tablet.git
+./fw12-tablet/install.sh
 ```
 
-The restart is not optional the first time. Enabling a third-party panel
-plugin hot does mount it, but a later `rescanPlugins` leaves it unmounted
-until the shell is restarted.
+`install.sh` figures out which of the two it is and does not copy the plugin
+over itself.
 
-### 4. Boot fix (optional, root)
+### The one part that needs root
 
 ```bash
-sudo system/install.sh
+sudo ~/.config/omarchy/plugins/drotiesel.fw12-tablet/system/install.sh
 ```
 
-Closes a firmware probe race that costs the tablet switch on some boots. Not
-needed at runtime — without it the rotation half simply stays in laptop mode
-on an affected boot.
+Closes a firmware probe race that costs the tablet switch on roughly one boot
+in three. Nothing breaks without it — an affected boot simply comes up in
+laptop mode — so it is worth doing and safe to skip. `install.sh` prints this
+line at the end rather than running it for you.
+
+### Removing it
+
+```bash
+~/.config/omarchy/plugins/drotiesel.fw12-tablet/uninstall.sh
+omarchy plugin remove drotiesel.fw12-tablet
+```
+
+The boot fix is left in place; `uninstall.sh` prints the commands to take that
+out too, rather than doing it, because it is a generic module-ordering fix that
+is harmless on its own.
+
+### Requirements
+
+`gtk4`, `gtk4-layer-shell`, `libxkbcommon`, `wayland`, `pkgconf`, `gcc` — all
+in the official repos, nothing from the AUR. `install.sh` checks for them
+before it builds anything and prints the one `pacman` line that fixes it.
 
 ---
 
@@ -94,6 +96,20 @@ The button appears only while the machine is folded into a tablet.
   fraction of the screen so it survives rotation.
 
 Unfolding puts the keyboard away and takes the button with it.
+
+### Keybinds
+
+| | |
+|---|---|
+| `SUPER + B` | show/hide the keyboard, in either mode |
+| `SUPER + R` | lock/unlock auto-rotation; bound only while folded, and the lock clears when you unfold |
+
+`SUPER + B` is bound in laptop mode too, because its most useful job is the
+reverse of what it sounds like: dismissing the on-screen keyboard *from* the
+on-screen keyboard, whose Framework key is a real Super. Two taps, and no
+aiming. `SUPER + K` would have been the obvious letter but it is Omarchy's own
+keybindings menu; on a stock install the free `SUPER` letters are A B D E H I M
+N Q U Y Z, and `SUPER + CTRL + <anything>` is completely unused.
 
 ### Swipes
 
@@ -174,6 +190,11 @@ input {
     kb_variant = intl
 }
 ```
+
+That combination is checked: `us`/`intl` comes up as a US board with `alt gr`
+and an acute dead key on the apostrophe, which is the whole point of the
+variant. Nothing in the keyboard needed changing to support it — it reads the
+layout, it does not carry a copy of one.
 
 Because it uploads the real keymap rather than inventing one, AltGr and dead
 keys work on it exactly as they do on the built-in keyboard — `AltGr` then `'`
