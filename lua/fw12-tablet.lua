@@ -124,25 +124,42 @@ end
 -- ---------------------------------------------------------------------------
 -- Orientation
 --
--- Axis convention measured on this hardware against iio-sensor-proxy, and
--- replayed over 90 captured samples. It is NOT guessable: panel mounting
--- differs between units. If rotation comes out mirrored, swap 1 and 3 here.
+-- Which way up the panel is, per dominant gravity axis. Measured on this
+-- machine against iio-sensor-proxy and replayed over 90 captured samples.
 --
---   |y| dominant, y > 0 -> normal      (0)
---   |x| dominant, x > 0 -> right-up    (3)
---   |y| dominant, y < 0 -> bottom-up   (2)
---   |x| dominant, x < 0 -> left-up     (1)
---   |z| dominant        -> flat: hold the previous orientation
+-- This is the one table in the file that is NOT guessable, and the one most
+-- likely to be wrong on a machine that is not mine: it depends on how the
+-- panel and its sensor are mounted, which differs between units and even
+-- between panel suppliers for the same model. Every other number here is
+-- either read from the hardware or a threshold with slack in it.
+--
+-- So it is a table rather than four literals buried in a branch. If rotation
+-- is wrong on your machine, it is almost certainly only this:
+--
+--   sideways      -- landscape and portrait swapped -- swap the y_* and x_*
+--                    pairs with each other
+--   mirrored      -- rotates the wrong way round     -- swap x_pos and x_neg
+--   upside down   -- 180 degrees out                 -- swap y_pos and y_neg
+--
+-- Transform numbers are Wayland's: 0 normal, 1 left-up, 2 bottom-up,
+-- 3 right-up. |z| dominant means lying flat, which carries no orientation
+-- information at all, so the previous one stands.
+local ORIENT = {
+    y_pos = 0, -- normal
+    y_neg = 2, -- bottom-up
+    x_pos = 3, -- right-up
+    x_neg = 1, -- left-up
+}
 -- ---------------------------------------------------------------------------
 local function classify(x, y, z)
     local ax, ay, az = math.abs(x), math.abs(y), math.abs(z)
     if az > ax and az > ay then return nil end -- lying flat: no information
     if ay > ax then
         if ay < DEAD_ZONE then return nil end
-        return y > 0 and 0 or 2
+        return y > 0 and ORIENT.y_pos or ORIENT.y_neg
     end
     if ax < DEAD_ZONE then return nil end
-    return x > 0 and 3 or 1
+    return x > 0 and ORIENT.x_pos or ORIENT.x_neg
 end
 
 -- ---------------------------------------------------------------------------
