@@ -221,8 +221,8 @@ Item {
     //   { "id": "io.github.mechanicsunlocked.gimbal",
     //     "swipeUp":    "@keyboard",
     //     "swipeDown":  "omarchy-menu",
-    //     "swipeRight": "hyprctl dispatch workspace e-1",
-    //     "swipeLeft":  "hyprctl dispatch workspace e+1",
+    //     "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+    //     "swipeLeft":  "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'",
     //     "swipeEdge":  16,
     //     "swipeThreshold": 60 }
     //
@@ -238,11 +238,22 @@ Item {
     // hyprland-1 words: `hyprctl dispatch workspace e+1` fails with a Lua
     // syntax error and does nothing. This is the form Omarchy's own workspace
     // widget uses.
-    // "-1"/"+1" rather than "e-1"/"e+1": the e- forms only visit workspaces
-    // that already have something on them, which makes the gesture skip past
-    // empty ones instead of walking the whole set.
-    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"-1\" })'"
-    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'"
+    // "e-1"/"e+1" rather than "-1"/"+1", which was the earlier choice and was
+    // wrong. Measured on this machine with workspaces 1..4 live:
+    //
+    //   from 1, focus("-1")  -> 1     a wall
+    //   from 4, focus("+1")  -> 5     a new empty workspace, for ever
+    //   from 1, focus("e-1") -> 4     wraps
+    //   from 4, focus("e+1") -> 1     wraps
+    //
+    // So the plain forms are a dead end going back and a workspace factory
+    // going forward. On a keyboard that is fine -- you know which end you are
+    // at. A swipe gives no such feedback: it just does nothing, which reads as
+    // the gesture being broken, and that is exactly how it was reported.
+    // The e- forms skip empty workspaces, which is the price, and they always
+    // move.
+    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'"
+    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
     readonly property int swipeEdge: settings.swipeEdge !== undefined ? settings.swipeEdge : Style.space(16)
     // The bottom strip is the one you have to find by feel -- when the
     // keyboard is out it is the band between the keys and the window above
@@ -330,6 +341,11 @@ Item {
         return Math.max(8, Math.min(root.swipeThreshold, room * 0.6));
     }
 
+    // Which surface the last gesture came from. Only for the log, but the
+    // log is how the last two swipe reports were settled, and "it fired" and
+    // "it fired *there*" are different facts.
+    property string lastSwipeFrom: ""
+
     function runAction(key) {
         var cmd = String(root.actionFor(key) || "");
         if (cmd === "")
@@ -338,7 +354,7 @@ Item {
             root.requestKeyboard(!root.keyboardShown);
             return;
         }
-        console.log("gimbal: swipe " + key + " -> " + cmd);
+        console.log("gimbal: swipe " + key + " on " + root.lastSwipeFrom + " -> " + cmd);
         actionProc.running = false;
         actionProc.command = ["sh", "-c", cmd];
         actionProc.running = true;
@@ -448,6 +464,7 @@ Item {
                     if (key === "")
                         return;
                     strip.fired = true;
+                    root.lastSwipeFrom = strip.modelData.name;
                     root.runAction(key);
                 }
             }
@@ -582,6 +599,7 @@ Item {
                     if (key === "")
                         return;
                     gutter.fired = true;
+                    root.lastSwipeFrom = gutter.modelData.name;
                     root.runAction(key);
                 }
             }

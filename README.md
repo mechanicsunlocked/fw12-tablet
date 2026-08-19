@@ -171,8 +171,8 @@ same file and the same place Omarchy keeps every other plugin's settings:
   "id": "io.github.mechanicsunlocked.gimbal",
   "swipeUp": "@keyboard",
   "swipeDown": "omarchy-menu",
-  "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"-1\" })'",
-  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'",
+  "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'",
   "swipeEdge": 16,
   "swipeEdgeBottom": 32,
   "swipeGutter": 30,
@@ -187,9 +187,20 @@ effect without restarting anything.
 Two things about those workspace commands. **`hyprctl dispatch` takes a Lua
 expression on Omarchy 4**, not the words you would use on a hyprlang config —
 `hyprctl dispatch workspace +1` fails with a Lua syntax error and silently does
-nothing. And **`+1`/`-1` rather than `e+1`/`e-1`**: the `e` forms only visit
-workspaces that already have something on them, so the gesture skips past empty
-ones instead of walking the whole set.
+nothing.
+
+And **`e+1`/`e-1` rather than `+1`/`-1`**, because a swipe has to always move.
+Measured with workspaces 1–4 live:
+
+| from | `+1` / `-1` | `e+1` / `e-1` |
+|---|---|---|
+| workspace 1, backwards | stays at 1 | wraps to 4 |
+| workspace 4, forwards | creates an empty workspace 5 | wraps to 1 |
+
+The plain forms are a wall going back and a workspace factory going forward. On
+a keybind that is fine — you know which end you are at. A swipe gives no such
+feedback: it simply does nothing, which reads as a broken gesture. The `e`
+forms skip empty workspaces, which is the price, and they always move.
 
 ### Keybinds
 
