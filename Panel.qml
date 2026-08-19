@@ -793,6 +793,9 @@ Item {
                 width: root.buttonSize
                 height: root.buttonSize
 
+                // 0..1 toward committing a flick, same as the strips use.
+                property real progress: 0
+
                 x: surface.insetSide + surface.travelX * root.fx
                 y: root.edgeMargin + surface.travelY * root.fy
 
@@ -800,7 +803,9 @@ Item {
                 // something demanding attention, and brought fully up while
                 // the keyboard is out so its state is visible at a glance.
                 opacity: drag.active ? 1.0 : (root.keyboardShown ? 1.0 : 0.72)
-                scale: drag.active ? 1.08 : 1.0
+                // Picked up, it lifts. Flicked, it does not move at all, so
+                // the only thing that can report the gesture is the ring below.
+                scale: button.moveMode ? 1.18 : 1.0
 
                 Behavior on opacity {
                     NumberAnimation {
@@ -812,6 +817,27 @@ Item {
                     NumberAnimation {
                         duration: 120
                         easing.type: Easing.OutCubic
+                    }
+                }
+
+                // A ring that grows out of the button as a flick commits.
+                // The button cannot move to report the gesture -- moving is
+                // what holding does -- so this is the only thing that can.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: parent.width * (1 + 0.5 * button.progress)
+                    height: width
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: Math.max(1, Style.space(2))
+                    border.color: button.progress >= 1 ? Color.accent : Util.alpha(Color.popups.text, 0.45)
+                    opacity: (drag.active && !button.moveMode) ? button.progress : 0
+                    visible: opacity > 0
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: 90
+                        }
                     }
                 }
 
@@ -861,6 +887,26 @@ Item {
                 // the finger has gone, and that is turned back into the same
                 // two fractions the position is stored in. So x and y stay
                 // ordinary bindings and a rotation mid-drag cannot desync them.
+                // The button is the one control that is not against an edge,
+                // so a swipe from it has the whole screen in every direction.
+                // That makes it the only place all four gestures are equally
+                // good -- an edge strip can never offer the direction that
+                // points off the display, because the glass runs out.
+                //
+                // Flick it for an action, hold it to pick it up. The hold is
+                // what keeps the two apart: without it, moving the button and
+                // swiping from it are the same motion, and one of them has to
+                // lose. Holding is also the rarer intent -- a button gets
+                // moved once and used daily.
+                property bool moveMode: false
+
+                Timer {
+                    id: holdTimer
+
+                    interval: 350
+                    onTriggered: button.moveMode = true
+                }
+
                 DragHandler {
                     id: drag
 
@@ -868,23 +914,51 @@ Item {
 
                     property real startFx: 0
                     property real startFy: 0
+                    property bool fired: false
 
                     onActiveChanged: {
                         if (drag.active) {
                             drag.startFx = root.fx;
                             drag.startFy = root.fy;
+                            drag.fired = false;
                         } else {
-                            root.savePosition();
+                            if (button.moveMode)
+                                root.savePosition();
+                            holdTimer.stop();
+                            button.moveMode = false;
+                            button.progress = 0;
                         }
                     }
 
                     onActiveTranslationChanged: {
                         if (!drag.active)
                             return;
-                        if (surface.travelX > 0)
-                            root.fx = root.clamp01(drag.startFx + drag.activeTranslation.x / surface.travelX);
-                        if (surface.travelY > 0)
-                            root.fy = root.clamp01(drag.startFy + drag.activeTranslation.y / surface.travelY);
+
+                        if (button.moveMode) {
+                            if (surface.travelX > 0)
+                                root.fx = root.clamp01(drag.startFx + drag.activeTranslation.x / surface.travelX);
+                            if (surface.travelY > 0)
+                                root.fy = root.clamp01(drag.startFy + drag.activeTranslation.y / surface.travelY);
+                            return;
+                        }
+
+                        if (drag.fired)
+                            return;
+
+                        var t = drag.activeTranslation;
+                        var horizontal = Math.abs(t.x) > Math.abs(t.y);
+                        var along = horizontal ? t.x : t.y;
+                        // Moving at all means this is a flick and not a hold,
+                        // so the button must not turn into a draggable one
+                        // underneath the gesture.
+                        if (Math.abs(t.x) > 4 || Math.abs(t.y) > 4)
+                            holdTimer.stop();
+                        button.progress = Math.min(1, Math.abs(along) / root.swipeThreshold);
+                        if (Math.abs(along) < root.swipeThreshold)
+                            return;
+                        drag.fired = true;
+                        root.lastSwipeFrom = "button";
+                        root.runAction(horizontal ? (along < 0 ? "left" : "right") : (along < 0 ? "up" : "down"));
                     }
                 }
 
@@ -892,6 +966,12 @@ Item {
                 // the drag threshold, which cancels this. So a deliberate move
                 // never also toggles the keyboard.
                 TapHandler {
+                    onPressedChanged: {
+                        if (pressed)
+                            holdTimer.restart();
+                        else
+                            holdTimer.stop();
+                    }
                     onTapped: root.requestKeyboard(!root.keyboardShown)
                 }
             }

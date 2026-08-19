@@ -95,7 +95,7 @@ All three toggle, so the same action puts it away again:
 
 | | |
 |---|---|
-| **The button** | tap the Framework logo. It appears only while folded, and you can drag it anywhere. |
+| **The button** | tap the Framework logo. It appears only while folded. |
 | **`SUPER + B`** | works in laptop mode too. |
 | **Swipe up** | from the bottom edge of the screen, while folded. |
 
@@ -108,6 +108,23 @@ without hunting for a button that the keyboard may well be sitting on top of.
 
 Unfolding puts the keyboard away and takes the button and the swipe strips with
 it.
+
+### The button is also a swipe pad
+
+**Flick it** in any of the four directions for the same four actions as the
+edges. **Hold it** for a moment to pick it up and move it; it swells slightly
+to say it is loose, and the position is remembered as a fraction of the screen
+so it survives rotation.
+
+It is worth having because it is the only control that is not against an edge.
+An edge strip can never offer the direction pointing off the display — swipe
+left at the left edge and the glass runs out — so on the edges one direction of
+four is always weak. From the button every direction has the whole screen, and
+you can put it wherever your thumb actually rests.
+
+The hold is what keeps moving and flicking apart. Without it they are the same
+motion and one of them has to lose; holding is also the rarer intent, since a
+button gets moved once and used daily.
 
 ### Everything else on the edges
 
