@@ -172,7 +172,7 @@ same file and the same place Omarchy keeps every other plugin's settings:
   "swipeUp": "@keyboard",
   "swipeDown": "omarchy-menu",
   "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
-  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'",
+  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'",
   "swipeEdge": 16,
   "swipeEdgeBottom": 32,
   "swipeGutter": 30,
@@ -189,29 +189,20 @@ expression on Omarchy 4**, not the words you would use on a hyprlang config —
 `hyprctl dispatch workspace +1` fails with a Lua syntax error and silently does
 nothing.
 
-And **`e+1`/`e-1` rather than `+1`/`-1`**, because a swipe has to always move.
-Measured with workspaces 1–4 live:
+And **the two directions use different forms on purpose**, because a swipe has
+to always do something. Measured with workspaces 1–4 live:
 
-| from | `+1` / `-1` | `e+1` / `e-1` |
-|---|---|---|
-| workspace 1, backwards | stays at 1 | wraps to 4 |
-| workspace 4, forwards | creates an empty workspace 5 | wraps to 1 |
+| | `+1` | `e+1` | `-1` | `e-1` |
+|---|---|---|---|---|
+| from workspace 4 (the end) | **new workspace 5** | wraps to 1 | — | — |
+| from workspace 1 (the start) | — | — | **stays at 1** | wraps to 4 |
 
-The plain forms are a wall going back and a workspace factory going forward. On
-a keybind that is fine — you know which end you are at. A swipe gives no such
-feedback: it simply does nothing, which reads as a broken gesture. The `e`
-forms skip empty workspaces, which is the price, and they always move.
-
-### Keybinds
-
-| | |
-|---|---|
-| `SUPER + B` | show/hide the keyboard, in either mode |
-| `SUPER + R` | lock/unlock auto-rotation; bound only while folded, and the lock clears when you unfold |
-
-`SUPER + K` would have been the obvious letter for the keyboard but it is
-Omarchy's own keybindings menu; on a stock install the free `SUPER` letters are
-A B D E H I M N Q U Y Z, and `SUPER + CTRL + <anything>` is completely unused.
+Forward is `+1`, so swiping past the end opens a new workspace — which is the
+point of swiping past the end. Hyprland drops it again when you leave it empty,
+so they do not pile up. Back is `e-1`, so it wraps to the last workspace that
+exists rather than stopping dead. `-1` is the only one of the four that can do
+nothing at all, and a swipe that does nothing reads as broken: there is no
+feedback to tell you that you are simply at the end.
 
 ### Making it always visible
 

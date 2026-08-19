@@ -238,22 +238,24 @@ Item {
     // hyprland-1 words: `hyprctl dispatch workspace e+1` fails with a Lua
     // syntax error and does nothing. This is the form Omarchy's own workspace
     // widget uses.
-    // "e-1"/"e+1" rather than "-1"/"+1", which was the earlier choice and was
-    // wrong. Measured on this machine with workspaces 1..4 live:
+    // The two directions are deliberately not the same form. Measured on this
+    // machine with workspaces 1..4 live:
     //
     //   from 1, focus("-1")  -> 1     a wall
-    //   from 4, focus("+1")  -> 5     a new empty workspace, for ever
-    //   from 1, focus("e-1") -> 4     wraps
-    //   from 4, focus("e+1") -> 1     wraps
+    //   from 4, focus("+1")  -> 5     a new workspace
+    //   from 1, focus("e-1") -> 4     wraps to the last one that exists
+    //   from 4, focus("e+1") -> 1     wraps to the first
     //
-    // So the plain forms are a dead end going back and a workspace factory
-    // going forward. On a keyboard that is fine -- you know which end you are
-    // at. A swipe gives no such feedback: it just does nothing, which reads as
-    // the gesture being broken, and that is exactly how it was reported.
-    // The e- forms skip empty workspaces, which is the price, and they always
-    // move.
+    // Forward is "+1": swiping past the end opens a new workspace, which is
+    // the point of swiping past the end. Hyprland drops it again when you
+    // leave it empty, so it does not accumulate.
+    //
+    // Back is "e-1": it wraps to the last workspace that exists rather than
+    // stopping dead at 1. "-1" is the only one of the four that can do
+    // nothing at all, and a swipe that does nothing reads as a broken gesture
+    // -- there is no feedback to tell you that you are simply at the end.
     readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'"
-    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'"
     readonly property int swipeEdge: settings.swipeEdge !== undefined ? settings.swipeEdge : Style.space(16)
     // The bottom strip is the one you have to find by feel -- when the
     // keyboard is out it is the band between the keys and the window above
@@ -315,26 +317,32 @@ Item {
         }
     }
 
-    // How far a finger can travel before it leaves the display.
+    // How far a finger can actually travel before it leaves the display.
     //
     // A strip anchored to an edge is a dead end in that direction: swipe left
-    // on the left edge and there is only the strip's own width to swipe
-    // across, because past that the finger is off the glass. The full
-    // threshold could never be met, so the gesture would be listed and never
-    // fire -- which is worse than not offering it.
+    // on the left edge and the glass runs out. The room is *not* the strip's
+    // width -- it is the distance from where the finger landed to the screen
+    // edge, which on a 30 px strip averages 15 px and can be nearly nothing.
     //
-    // So the threshold follows the room: most of what is there, floored so a
-    // brush past cannot trigger anything. Directions with the whole screen to
-    // play with keep the full threshold.
-    function swipeThresholdFor(m, horizontal, along, w, h) {
+    // Measuring it as the full width was the first attempt and it made every
+    // outward swipe impossible: the log showed 19 inward gestures firing and
+    // not one outward, because an 18 px threshold cannot be met from an
+    // average of 15 px of travel. Since each strip is anchored to the edge it
+    // is limited by, the press position within the surface *is* that distance.
+    //
+    // The threshold is most of whatever room there is, floored so a brush
+    // cannot trigger anything -- which also means a finger landing right on
+    // the edge correctly gets no gesture, because there is nowhere to go.
+    // Directions with the whole screen to play with keep the full threshold.
+    function swipeThresholdFor(m, horizontal, along, press, w, h) {
         var room = Infinity;
         if (horizontal) {
             if (along < 0 && m.aLeft)
-                room = w;
+                room = press.x;
             else if (along > 0 && m.aRight)
-                room = w;
+                room = w - press.x;
         } else if (along > 0 && m.aBottom) {
-            room = h;
+            room = h - press.y;
         }
         if (room === Infinity)
             return root.swipeThreshold;
@@ -458,7 +466,7 @@ Item {
                     // the strip's four directions this is.
                     var horizontal = Math.abs(t.x) > Math.abs(t.y);
                     var along = horizontal ? t.x : t.y;
-                    if (Math.abs(along) < root.swipeThresholdFor(strip.modelData, horizontal, along, strip.width, strip.height))
+                    if (Math.abs(along) < root.swipeThresholdFor(strip.modelData, horizontal, along, swipe.centroid.pressPosition, strip.width, strip.height))
                         return;
                     var key = horizontal ? (along < 0 ? strip.modelData.left : strip.modelData.right) : (along < 0 ? strip.modelData.up : strip.modelData.down);
                     if (key === "")
@@ -590,7 +598,7 @@ Item {
                     var t = gutterSwipe.activeTranslation;
                     var horizontal = Math.abs(t.x) > Math.abs(t.y);
                     var along = horizontal ? t.x : t.y;
-                    if (Math.abs(along) < root.swipeThresholdFor(gutter.modelData, horizontal, along, gutter.width, gutter.height))
+                    if (Math.abs(along) < root.swipeThresholdFor(gutter.modelData, horizontal, along, gutterSwipe.centroid.pressPosition, gutter.width, gutter.height))
                         return;
                     // Upward is the keyboard, on both gutters, so the gesture
                     // that summons it is also the one that dismisses it, from
