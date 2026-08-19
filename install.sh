@@ -1,5 +1,5 @@
 #!/bin/bash
-# fw12-tablet -- install everything except the optional root boot fix.
+# Gimbal -- install everything except the optional root boot fix.
 #
 # No sudo, no install hooks, nothing outside $HOME. Idempotent: running it
 # twice is the same as running it once, and it is also how you upgrade.
@@ -7,7 +7,7 @@
 # Four parts, and they are genuinely separate pieces of software:
 #
 #   1. fw12-oskbd    the keyboard          -> ~/.local/bin
-#   2. fw12-tablet.lua  rotation           -> ~/.config/hypr, plus one require
+#   2. gimbal.lua  rotation           -> ~/.config/hypr, plus one require
 #                                             line in hyprland.lua
 #   3. the shell plugin  button + swipes   -> ~/.config/omarchy/plugins/<id>
 #   4. the boot fix                        -> root, printed at the end, skipped
@@ -18,7 +18,7 @@
 # plugin over itself.
 set -euo pipefail
 
-PLUGIN_ID="drotiesel.fw12-tablet"
+PLUGIN_ID="io.github.mechanicsunlocked.gimbal"
 here=$(cd "$(dirname "$0")" && pwd)
 plugin_dir="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 warnings=()
@@ -72,20 +72,20 @@ esac
 # 2. Rotation
 # --------------------------------------------------------------------------
 say "Installing the rotation module"
-install -Dm644 "$here/lua/fw12-tablet.lua" "$HOME/.config/hypr/fw12-tablet.lua"
-note "$HOME/.config/hypr/fw12-tablet.lua"
+install -Dm644 "$here/lua/gimbal.lua" "$HOME/.config/hypr/gimbal.lua"
+note "$HOME/.config/hypr/gimbal.lua"
 
 hl="$HOME/.config/hypr/hyprland.lua"
 if [[ ! -f $hl ]]; then
     warn "no $hl -- add this line to your Hyprland config by hand:
-             require(\"hypr.fw12-tablet\")"
-elif grep -q 'require("hypr.fw12-tablet")' "$hl"; then
+             require(\"hypr.gimbal\")"
+elif grep -q 'require("hypr.gimbal")' "$hl"; then
     note "already required from hyprland.lua"
 else
     cat >>"$hl" <<'LUA'
 
--- Framework 12 tablet mode and auto-rotation (fw12-tablet).
-require("hypr.fw12-tablet")
+-- Framework 12 tablet mode and auto-rotation (gimbal).
+require("hypr.gimbal")
 LUA
     note "added the require line to hyprland.lua"
 fi

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "drotiesel.fw12-tablet",
-  "name": "Framework 12 tablet",
+  "id": "io.github.mechanicsunlocked.gimbal",
+  "name": "Gimbal",
   "version": "0.3.0",
   "author": "Sven Mathieu",
-  "description": "Tablet mode for the Framework Laptop 12: a draggable on-screen-keyboard button, edge swipes, and a keyboard laid out like the machine's own. Leaves fcitx5 alone.",
+  "description": "Tablet mode for the Framework Laptop 12 on Hyprland: auto-rotation, an on-screen keyboard laid out like the machine's own keyboard, edge swipes, and a draggable button. Leaves fcitx5 alone.",
   "kinds": [
     "panel"
   ],

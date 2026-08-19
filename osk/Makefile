@@ -18,7 +18,7 @@
 
 PREFIX     ?= $(HOME)/.local
 BINDIR     ?= $(PREFIX)/bin
-DATADIR    ?= $(PREFIX)/share/fw12-tablet
+DATADIR    ?= $(PREFIX)/share/gimbal
 
 PKGS        = gtk4 gtk4-layer-shell-0 xkbcommon wayland-client
 CFLAGS     ?= -O2 -Wall -Wextra

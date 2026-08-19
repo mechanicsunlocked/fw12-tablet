@@ -1,4 +1,4 @@
-# Architecture — `drotiesel.fw12-tablet`
+# Architecture — `io.github.mechanicsunlocked.gimbal`
 
 Design derived from measured Phase 0 results. See `FINDINGS.md` for the
 evidence behind every claim here.
@@ -26,13 +26,13 @@ harmless. See Component B.
 
 ---
 
-## Component A — `lua/fw12-tablet.lua` (no daemon)
+## Component A — `lua/gimbal.lua` (no daemon)
 
-Installed to `~/.config/hypr/fw12-tablet.lua`, activated by one line in
+Installed to `~/.config/hypr/gimbal.lua`, activated by one line in
 `~/.config/hypr/hyprland.lua`:
 
 ```lua
-require("hypr.fw12-tablet")
+require("hypr.gimbal")
 ```
 
 `package.path` includes `~/.config/?.lua` (set by Omarchy's `bootstrap.lua`),
@@ -101,7 +101,7 @@ Framework key as Super, and a faithful arrow cluster. It was written for
 (same author, same MIT licence).
 
 `plugin/` is an Omarchy shell plugin installed to
-`~/.config/omarchy/plugins/drotiesel.fw12-tablet/`. It draws a single round,
+`~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/`. It draws a single round,
 draggable button carrying the Framework mark, and runs or does not run the
 keyboard.
 

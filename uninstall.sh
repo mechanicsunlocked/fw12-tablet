@@ -1,12 +1,12 @@
 #!/bin/bash
-# fw12-tablet -- remove everything install.sh put in $HOME.
+# Gimbal -- remove everything install.sh put in $HOME.
 #
 # The root boot fix is left alone: it is a generic kernel-module ordering fix
 # that does no harm on its own, and removing it is printed rather than done so
 # that nobody loses their tablet switch to a script they ran to tidy up.
 set -euo pipefail
 
-PLUGIN_ID="drotiesel.fw12-tablet"
+PLUGIN_ID="io.github.mechanicsunlocked.gimbal"
 here=$(cd "$(dirname "$0")" && pwd)
 plugin_dir="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 
@@ -18,26 +18,26 @@ pkill -x fw12-oskbd 2>/dev/null && note "stopped" || note "not running"
 
 say "Removing the keyboard"
 rm -fv "$HOME/.local/bin/fw12-oskbd" \
-       "$HOME/.local/share/fw12-tablet/framework-logo.svg" | sed 's/^/    /'
-rmdir "$HOME/.local/share/fw12-tablet" 2>/dev/null || true
+       "$HOME/.local/share/gimbal/framework-logo.svg" | sed 's/^/    /'
+rmdir "$HOME/.local/share/gimbal" 2>/dev/null || true
 
 say "Removing the rotation module"
 hl="$HOME/.config/hypr/hyprland.lua"
-if [[ -f $hl ]] && grep -q 'require("hypr.fw12-tablet")' "$hl"; then
+if [[ -f $hl ]] && grep -q 'require("hypr.gimbal")' "$hl"; then
     # Take the comment with it only when it is ours and directly above; a line
     # someone wrote themselves is not this script's to delete.
     python3 - "$hl" <<'PY'
 import re, sys
 p = sys.argv[1]
 s = open(p).read()
-s = re.sub(r'\n*-- Framework 12 tablet mode and auto-rotation \(fw12-tablet\)\.\n'
-           r'require\("hypr\.fw12-tablet"\)\n', '\n', s)
-s = re.sub(r'^require\("hypr\.fw12-tablet"\)\n', '', s, flags=re.M)
+s = re.sub(r'\n*-- Framework 12 tablet mode and auto-rotation \(gimbal\)\.\n'
+           r'require\("hypr\.gimbal"\)\n', '\n', s)
+s = re.sub(r'^require\("hypr\.gimbal"\)\n', '', s, flags=re.M)
 open(p, 'w').write(s)
 PY
     note "removed the require line from hyprland.lua"
 fi
-rm -fv "$HOME/.config/hypr/fw12-tablet.lua" | sed 's/^/    /'
+rm -fv "$HOME/.config/hypr/gimbal.lua" | sed 's/^/    /'
 
 say "Removing the plugin"
 omarchy-plugin-disable "$PLUGIN_ID" >/dev/null 2>&1 || true
@@ -48,7 +48,7 @@ else
     rm -rf "$plugin_dir"
     note "removed $plugin_dir"
 fi
-rm -f "$HOME/.local/state/omarchy/fw12-osk-button.json"
+rm -f "$HOME/.local/state/omarchy/gimbal-button.json"
 
 omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
 omarchy-restart-shell >/dev/null 2>&1 || true

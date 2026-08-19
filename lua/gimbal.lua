@@ -1,10 +1,10 @@
--- fw12-tablet -- tablet mode and auto-rotation for the Framework Laptop 12
+-- gimbal -- tablet mode and auto-rotation for the Framework Laptop 12
 -- on Omarchy 4 / Hyprland.
 --
 -- Install:
---   cp fw12-tablet.lua ~/.config/hypr/
+--   cp gimbal.lua ~/.config/hypr/
 --   then add to ~/.config/hypr/hyprland.lua:
---       require("hypr.fw12-tablet")
+--       require("hypr.gimbal")
 --
 -- There is deliberately no daemon. Everything here is measured rather than
 -- assumed; see FINDINGS.md for the numbers behind each choice.
@@ -64,7 +64,7 @@ local LAPTOP_FOLLOW_MOUSE = 1 -- Omarchy's default; change here if yours differs
 -- A file rather than IPC because the reader is a Quickshell FileView, which
 -- already does inotify, and because a plain word on disk is trivial to check
 -- by hand when something looks wrong.
-local MODE_PATH = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/fw12-tablet-mode"
+local MODE_PATH = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/gimbal-mode"
 
 -- ---------------------------------------------------------------------------
 -- sysfs helpers
@@ -114,7 +114,7 @@ local function accel_dir()
     S.accel = find_iio("label", "accel-display")
     if not S.accel then
         hl.notification.create({
-            text = "fw12-tablet: no accel-display sensor; rotation disabled",
+            text = "gimbal: no accel-display sensor; rotation disabled",
             timeout = 5000,
         })
     end
@@ -316,7 +316,7 @@ S.pending, S.pending_n = nil, 0
 -- a stock install are A B D E H I M N Q U Y Z.
 hl.bind("SUPER + B", function()
     hl.dispatch(hl.dsp.exec_cmd(
-        "omarchy-shell shell call drotiesel.fw12-tablet toggle ''"))
+        "omarchy-shell shell call io.github.mechanicsunlocked.gimbal toggle ''"))
 end, { description = "Toggle the on-screen keyboard" })
 
 hl.bind("switch:on:" .. SWITCH_DEV, enter_tablet, { locked = true })
@@ -343,7 +343,7 @@ end
 -- Added because diagnosing a stuck lock ended with `hyprctl reload` as the
 -- only way out, which throws away the whole Lua state to change one boolean.
 --
---   hyprctl eval 'require("hypr.fw12-tablet").set_locked(false)'
+--   hyprctl eval 'require("hypr.gimbal").set_locked(false)'
 function M.set_locked(v)
     S.locked = v and true or false
     if not S.locked then tick() end

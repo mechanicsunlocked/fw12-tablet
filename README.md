@@ -1,10 +1,10 @@
-# fw12-tablet
+# Gimbal
 
 Tablet mode for the Framework Laptop 12 on Omarchy 4 / Hyprland.
 
 Two halves, both small:
 
-* **`lua/fw12-tablet.lua`** — tablet detection and auto-rotation, loaded
+* **`lua/gimbal.lua`** — tablet detection and auto-rotation, loaded
   straight into Hyprland's Lua config. Screen, touch and stylus rotate
   together. No daemon.
 * **`osk/`** — `fw12-oskbd`, a GTK4 layer-shell keyboard laid out like the
@@ -28,30 +28,30 @@ It is a git repo with a `manifest.json` at its root, which is what Omarchy's
 plugin installer expects, so:
 
 ```bash
-omarchy plugin add https://github.com/mechanicsunlocked/fw12-tablet.git --enable --yes
-~/.config/omarchy/plugins/drotiesel.fw12-tablet/install.sh
+omarchy plugin add https://github.com/mechanicsunlocked/gimbal.git --enable --yes
+~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/install.sh
 ```
 
 The first command clones and enables the button. The second builds the
 keyboard, installs the rotation module, adds one `require` line to your
 Hyprland config, and restarts the shell. It needs no root, touches nothing
 outside `$HOME`, and is also how you upgrade — run it again after
-`omarchy plugin update drotiesel.fw12-tablet`.
+`omarchy plugin update io.github.mechanicsunlocked.gimbal`.
 
 Two commands rather than one because Omarchy's installer deliberately never
 runs code from a plugin it has just cloned, which is the right call. So the
 second one is yours to read first:
 
 ```bash
-less ~/.config/omarchy/plugins/drotiesel.fw12-tablet/install.sh
+less ~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/install.sh
 ```
 
 Or from an ordinary clone, if you would rather not install it as a plugin at
 all until you have looked at it:
 
 ```bash
-git clone https://github.com/mechanicsunlocked/fw12-tablet.git
-./fw12-tablet/install.sh
+git clone https://github.com/mechanicsunlocked/gimbal.git
+./gimbal/install.sh
 ```
 
 `install.sh` figures out which of the two it is and does not copy the plugin
@@ -60,7 +60,7 @@ over itself.
 ### The one part that needs root
 
 ```bash
-sudo ~/.config/omarchy/plugins/drotiesel.fw12-tablet/system/install.sh
+sudo ~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/system/install.sh
 ```
 
 Closes a firmware probe race that costs the tablet switch on roughly one boot
@@ -71,8 +71,8 @@ line at the end rather than running it for you.
 ### Removing it
 
 ```bash
-~/.config/omarchy/plugins/drotiesel.fw12-tablet/uninstall.sh
-omarchy plugin remove drotiesel.fw12-tablet
+~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/uninstall.sh
+omarchy plugin remove io.github.mechanicsunlocked.gimbal
 ```
 
 The boot fix is left in place; `uninstall.sh` prints the commands to take that
@@ -144,7 +144,7 @@ same file and the same place Omarchy keeps every other plugin's settings:
 
 ```json
 {
-  "id": "drotiesel.fw12-tablet",
+  "id": "io.github.mechanicsunlocked.gimbal",
   "swipeUp": "@keyboard",
   "swipeDown": "omarchy-menu",
   "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"-1\" })'",
@@ -235,20 +235,33 @@ for one-shot, twice to lock it.
 ## Checking on it
 
 ```bash
-cat "$XDG_RUNTIME_DIR/fw12-tablet-mode"      # tablet | laptop
+cat "$XDG_RUNTIME_DIR/gimbal-mode"      # tablet | laptop
 pgrep -x fw12-oskbd                          # is the keyboard up
 hyprctl layers | grep -E 'osk|fw12'          # what is on screen
-hyprctl eval 'require("hypr.fw12-tablet").status()'
+hyprctl eval 'require("hypr.gimbal").status()'
 ```
 
 To move the button without touching it, delete
-`~/.local/state/omarchy/fw12-osk-button.json` and restart the shell; it goes
+`~/.local/state/omarchy/gimbal-button.json` and restart the shell; it goes
 back to the right edge.
 
 ---
 
-## Notes
+## Trademarks
 
-The button carries the Framework logo, which is a Framework Computer Inc.
-trademark. It is used here to mark hardware-specific controls on a Framework
-machine and implies no affiliation or endorsement.
+Gimbal is an independent community project. It is not made by, endorsed by, or
+affiliated with Framework Computer Inc.
+
+"Framework" and the Framework logo are trademarks of Framework Computer Inc.
+They appear here in two places, both descriptive: the button that summons the
+keyboard, which controls hardware-specific behaviour on a Framework machine,
+and the Super key of the on-screen keyboard, which reproduces the legend
+printed on that key of the actual laptop.
+
+The logo is an optional asset, not part of the program. If it is not installed,
+the Super key falls back to a `❖` glyph and everything else works unchanged, so
+the mark can be removed entirely by deleting one file:
+
+```bash
+rm ~/.local/share/gimbal/framework-logo.svg
+```

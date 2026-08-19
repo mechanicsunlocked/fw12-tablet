@@ -433,10 +433,10 @@ static const char *logo_path(void) {
 
   const char *home = g_get_home_dir();
   if (home) {
-    g_snprintf(buf, sizeof buf, "%s/.local/share/fw12-tablet/framework-logo.svg", home);
+    g_snprintf(buf, sizeof buf, "%s/.local/share/gimbal/framework-logo.svg", home);
     if (g_file_test(buf, G_FILE_TEST_EXISTS)) return buf;
   }
-  return "/usr/share/fw12-tablet/framework-logo.svg";
+  return "/usr/share/gimbal/framework-logo.svg";
 }
 
 

@@ -49,8 +49,8 @@ Item {
 
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string home: Quickshell.env("HOME") || ""
-    readonly property string modePath: runtimeDir + "/fw12-tablet-mode"
-    readonly property string posPath: home + "/.local/state/omarchy/fw12-osk-button.json"
+    readonly property string modePath: runtimeDir + "/gimbal-mode"
+    readonly property string posPath: home + "/.local/state/omarchy/gimbal-button.json"
 
     property string tabletState: ""
     readonly property bool folded: tabletState !== "laptop"
@@ -106,7 +106,7 @@ Item {
     }
 
     // Reachable from a keybind as
-    //   omarchy-shell shell call drotiesel.fw12-tablet toggle ''
+    //   omarchy-shell shell call io.github.mechanicsunlocked.gimbal toggle ''
     // which is what SUPER+K in the Lua half runs. Aiming for a 32 px strip is
     // not always what you want.
     function toggle(arg) {
@@ -163,7 +163,7 @@ Item {
 
         onExited: function (exitCode) {
             if (exitCode !== 0)
-                console.warn("fw12-tablet: fw12-oskbd exited " + exitCode);
+                console.warn("gimbal: fw12-oskbd exited " + exitCode);
         }
     }
 
@@ -218,7 +218,7 @@ Item {
     // entry are the values the plugin sees"). Nothing new to learn and nothing
     // extra to install; an absent field falls back to the default below.
     //
-    //   { "id": "drotiesel.fw12-tablet",
+    //   { "id": "io.github.mechanicsunlocked.gimbal",
     //     "swipeUp":    "@keyboard",
     //     "swipeDown":  "omarchy-menu",
     //     "swipeRight": "hyprctl dispatch workspace e-1",
@@ -266,7 +266,7 @@ Item {
             try {
                 var list = JSON.parse(text()).plugins || [];
                 for (var i = 0; i < list.length; i++) {
-                    if (list[i] && list[i].id === "drotiesel.fw12-tablet") {
+                    if (list[i] && list[i].id === "io.github.mechanicsunlocked.gimbal") {
                         found = list[i];
                         break;
                     }
@@ -290,7 +290,7 @@ Item {
 
         onExited: function (exitCode) {
             if (exitCode !== 0)
-                console.warn("fw12-tablet: swipe command exited " + exitCode + ": " + actionProc.command.join(" "));
+                console.warn("gimbal: swipe command exited " + exitCode + ": " + actionProc.command.join(" "));
         }
     }
 
@@ -302,7 +302,7 @@ Item {
             root.requestKeyboard(!root.keyboardShown);
             return;
         }
-        console.log("fw12-tablet: swipe " + key + " -> " + cmd);
+        console.log("gimbal: swipe " + key + " -> " + cmd);
         actionProc.running = false;
         actionProc.command = ["sh", "-c", cmd];
         actionProc.running = true;
