@@ -196,6 +196,22 @@ and an acute dead key on the apostrophe, which is the whole point of the
 variant. Nothing in the keyboard needed changing to support it — it reads the
 layout, it does not carry a copy of one.
 
+**US International is not a different keyboard from US.** The physical board is
+the same ANSI board with the same keys in the same places; `intl` is purely the
+software variant, and all it does is turn `'` `"` `` ` `` `~` `^` into dead keys
+and hang more characters off AltGr. So a plain US ANSI machine can run either,
+and the choice is only about how you want to type accents:
+
+| `kb_variant` | `'` then `e` | good for |
+|---|---|---|
+| *(empty)* | `'e` | typing English and nothing else |
+| `intl` | `é` | typing accents constantly; the price is that `don't` needs a space after the apostrophe |
+| `altgr-intl` | `'e`, and `AltGr+'` then `e` gives `é` | mostly English, accents when you need them — the apostrophe stays an apostrophe |
+
+`altgr-intl` is the one to reach for if `intl` starts fighting you over
+apostrophes. Whatever you pick, the on-screen keyboard follows it; there is
+nothing to change here.
+
 Because it uploads the real keymap rather than inventing one, AltGr and dead
 keys work on it exactly as they do on the built-in keyboard — `AltGr` then `'`
 then `e` gives `é`. Hold `Fn` for F1–F12 on the number row. Tap a modifier once
