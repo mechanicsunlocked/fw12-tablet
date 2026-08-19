@@ -431,6 +431,13 @@ Item {
 
             required property var modelData
             property bool fired: false
+            // 0..1, how far this gesture has got toward committing. It drives
+            // the only feedback a swipe has: without it there is no telling a
+            // gesture that fell short of the threshold from one that was never
+            // seen at all, and that is most of what makes an edge gesture feel
+            // unreliable.
+            property real progress: 0
+            property point pressAt: Qt.point(0, 0)
 
             screen: root.targetScreens[0]
             color: "transparent"
@@ -450,13 +457,61 @@ Item {
             implicitWidth: strip.modelData.band === "v" ? root.swipeGutter : 0
             implicitHeight: strip.modelData.band === "h" ? root.swipeEdgeBottom : 0
 
+
+            // Where the finger landed, and how close it is to committing.
+            //
+            // A swipe is the one gesture with no natural feedback: a button
+            // lights up under a thumb, a swipe just either happens or does
+            // not, and when it does not there is nothing to say whether it
+            // was too short, in the wrong place, or never seen. This is that
+            // missing half -- it appears under the finger the moment a strip
+            // takes the touch, so the live area teaches itself, and it fills
+            // as the threshold is approached so a gesture that fell short
+            // looks different from one that was ignored.
+            Rectangle {
+                id: pip
+
+                readonly property real span: Math.min(strip.width, strip.height)
+
+                x: strip.pressAt.x - width / 2
+                y: strip.pressAt.y - height / 2
+                width: pip.span * (0.55 + 0.45 * strip.progress)
+                height: width
+                radius: width / 2
+
+                color: strip.progress >= 1 ? Color.accent : Util.alpha(Color.popups.text, 0.5)
+                opacity: swipe.active ? (0.35 + 0.65 * strip.progress) : 0
+                visible: opacity > 0
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 130
+                        easing.type: Easing.OutCubic
+                    }
+                }
+                Behavior on width {
+                    NumberAnimation {
+                        duration: 60
+                    }
+                }
+                Behavior on color {
+                    ColorAnimation {
+                        duration: 80
+                    }
+                }
+            }
             DragHandler {
                 id: swipe
 
                 target: null
 
-                onActiveChanged: if (swipe.active)
-                    strip.fired = false
+                onActiveChanged: {
+                    if (swipe.active) {
+                        strip.fired = false;
+                        strip.pressAt = swipe.centroid.pressPosition;
+                    }
+                    strip.progress = 0;
+                }
 
                 onActiveTranslationChanged: {
                     if (!swipe.active || strip.fired)
@@ -466,7 +521,9 @@ Item {
                     // the strip's four directions this is.
                     var horizontal = Math.abs(t.x) > Math.abs(t.y);
                     var along = horizontal ? t.x : t.y;
-                    if (Math.abs(along) < root.swipeThresholdFor(strip.modelData, horizontal, along, swipe.centroid.pressPosition, strip.width, strip.height))
+                    var need = root.swipeThresholdFor(strip.modelData, horizontal, along, swipe.centroid.pressPosition, strip.width, strip.height);
+                    strip.progress = Math.min(1, Math.abs(along) / need);
+                    if (Math.abs(along) < need)
                         return;
                     var key = horizontal ? (along < 0 ? strip.modelData.left : strip.modelData.right) : (along < 0 ? strip.modelData.up : strip.modelData.down);
                     if (key === "")
@@ -540,6 +597,13 @@ Item {
 
             required property var modelData
             property bool fired: false
+            // 0..1, how far this gesture has got toward committing. It drives
+            // the only feedback a swipe has: without it there is no telling a
+            // gesture that fell short of the threshold from one that was never
+            // seen at all, and that is most of what makes an edge gesture feel
+            // unreliable.
+            property real progress: 0
+            property point pressAt: Qt.point(0, 0)
 
             screen: root.targetScreens[0]
             color: "transparent"
@@ -584,13 +648,61 @@ Item {
                 }
             }
 
+
+            // Where the finger landed, and how close it is to committing.
+            //
+            // A swipe is the one gesture with no natural feedback: a button
+            // lights up under a thumb, a swipe just either happens or does
+            // not, and when it does not there is nothing to say whether it
+            // was too short, in the wrong place, or never seen. This is that
+            // missing half -- it appears under the finger the moment a strip
+            // takes the touch, so the live area teaches itself, and it fills
+            // as the threshold is approached so a gesture that fell short
+            // looks different from one that was ignored.
+            Rectangle {
+                id: pip
+
+                readonly property real span: Math.min(gutter.width, gutter.height)
+
+                x: gutter.pressAt.x - width / 2
+                y: gutter.pressAt.y - height / 2
+                width: pip.span * (0.55 + 0.45 * gutter.progress)
+                height: width
+                radius: width / 2
+
+                color: gutter.progress >= 1 ? Color.accent : Util.alpha(Color.popups.text, 0.5)
+                opacity: gutterSwipe.active ? (0.35 + 0.65 * gutter.progress) : 0
+                visible: opacity > 0
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 130
+                        easing.type: Easing.OutCubic
+                    }
+                }
+                Behavior on width {
+                    NumberAnimation {
+                        duration: 60
+                    }
+                }
+                Behavior on color {
+                    ColorAnimation {
+                        duration: 80
+                    }
+                }
+            }
             DragHandler {
                 id: gutterSwipe
 
                 target: null
 
-                onActiveChanged: if (gutterSwipe.active)
-                    gutter.fired = false
+                onActiveChanged: {
+                    if (gutterSwipe.active) {
+                        gutter.fired = false;
+                        gutter.pressAt = gutterSwipe.centroid.pressPosition;
+                    }
+                    gutter.progress = 0;
+                }
 
                 onActiveTranslationChanged: {
                     if (!gutterSwipe.active || gutter.fired)
@@ -598,7 +710,9 @@ Item {
                     var t = gutterSwipe.activeTranslation;
                     var horizontal = Math.abs(t.x) > Math.abs(t.y);
                     var along = horizontal ? t.x : t.y;
-                    if (Math.abs(along) < root.swipeThresholdFor(gutter.modelData, horizontal, along, gutterSwipe.centroid.pressPosition, gutter.width, gutter.height))
+                    var need = root.swipeThresholdFor(gutter.modelData, horizontal, along, gutterSwipe.centroid.pressPosition, gutter.width, gutter.height);
+                    gutter.progress = Math.min(1, Math.abs(along) / need);
+                    if (Math.abs(along) < need)
                         return;
                     // Upward is the keyboard, on both gutters, so the gesture
                     // that summons it is also the one that dismisses it, from
