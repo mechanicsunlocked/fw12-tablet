@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "drotiesel.fw12-tablet",
   "name": "Framework 12 tablet",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Sven Mathieu",
-  "description": "A draggable on-screen-keyboard button for the Framework Laptop 12 in tablet mode. Drives squeekboard over DBus; leaves fcitx5 alone.",
+  "description": "Tablet mode for the Framework Laptop 12: a draggable on-screen-keyboard button, edge swipes, and a keyboard laid out like the machine's own. Leaves fcitx5 alone.",
   "kinds": [
     "panel"
   ],
