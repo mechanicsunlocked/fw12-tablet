@@ -111,45 +111,55 @@ it.
 
 ### Everything else on the edges
 
-While folded, three thin strips along the screen edges carry four gestures:
+While folded, every screen edge is live, and **each one takes all four
+directions**:
 
 | Gesture | What it does |
 |---|---|
-| swipe **up** from the bottom edge | show/hide the keyboard |
-| swipe **down** on either side edge | `omarchy-menu` |
-| swipe **right** from the left edge | previous workspace |
-| swipe **left** from the right edge | next workspace |
+| swipe **up** | show/hide the keyboard |
+| swipe **down** | `omarchy-menu` |
+| swipe **right** | previous workspace |
+| swipe **left** | next workspace |
 
-#### Why the strips are where they are
+So you never have to remember which edge does what — whichever one your thumb
+finds, all four work there.
 
-Two placements are deliberate and worth knowing:
+#### The gutters, and why the keyboard gets smaller
 
-**There is no top-edge strip.** The bar owns the real top edge, so a swipe that
-starts at the top of the screen starts on the bar and the bar gets it.
+The plain edge strips step aside for anything that reserves space, which is
+what keeps them clear of the bar. It also means that the moment the keyboard is
+up they stop at the top of it, and the whole lower part of the screen goes dead
+to gestures.
 
-**The menu is on the side edges, not the bottom.** A downward swipe starting on
-the bottom strip has only the height of the strip before the finger runs off
-the display — less than the threshold, so it could never complete. The side
-strips are full height.
+So there are **gutters** as well: 30 px down each side and 30 px across the
+bottom, which ignore reservations and stay live whatever else is on screen. The
+keyboard is told to keep exactly that much clear on all three edges, so a gutter
+is never sitting on a key — because a gesture area over a key is a key you
+cannot press, and in portrait the board is full width, so a strip laid over the
+edge would cover esc, tab, shift, ctrl and fn on one side and del, backspace,
+enter and the arrows on the other.
 
-**The gutters are the strips that survive the keyboard.** The ordinary side
-strips step aside for whatever reserves space, so the moment the keyboard is up
-they stop at the top of it and the whole lower half of the screen goes dead to
-gestures. The two gutters — 30 px down each edge — ignore that and run the full
-height, and the keyboard is told to keep exactly that much clear on each side,
-so a gutter is never sitting on a key. While the keyboard is out each gutter
-draws a thin bar down its middle to say where it is; hidden, the whole edge
-works and the marker would only be clutter.
+While the keyboard is out, each gutter draws a thin bar down its middle to say
+where it is. Hidden, the whole edge works and the marker would only be clutter.
 
-`swipeGutter` is what the keyboard gives up, so raising it makes the board
+`swipeGutter` is the space the keyboard gives up, so raising it makes the board
 narrower. At the default 30 px landscape is unaffected — the board is already
-845 px on a 1200 px screen — and portrait goes from 750 to 690 px wide, which
-takes the keys from 11.5 mm to 10.6 mm across.
+845 px on a 1200 px screen — and portrait goes from 750 to 690 px wide, taking
+the keys from 11.5 mm to 10.6 mm across.
 
-The side strips are 16 px; the bottom one is 32, because it is the one you have
-to find by feel — when the keyboard is out it is the band between the keys and
-the window above them. Strips sit in whatever space the bar and keyboard are
-not using, so one is never on top of a key or a bar widget.
+#### There is no top strip
+
+The bar owns the real top edge, so a swipe that starts at the top of the screen
+starts on the bar and the bar gets it.
+
+#### Thresholds follow the room
+
+A strip anchored to an edge is a dead end in that direction: swipe left on the
+left edge and there is only the strip's own width to cross before your finger
+is off the glass. A fixed threshold could never be met there, so that direction
+would be listed and never fire. The threshold instead follows the room
+available — most of it, with a floor so a brush past cannot trigger anything —
+and directions with the whole screen to play with keep the full threshold.
 
 #### Changing them
 

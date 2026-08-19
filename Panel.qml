@@ -304,6 +304,32 @@ Item {
         }
     }
 
+    // How far a finger can travel before it leaves the display.
+    //
+    // A strip anchored to an edge is a dead end in that direction: swipe left
+    // on the left edge and there is only the strip's own width to swipe
+    // across, because past that the finger is off the glass. The full
+    // threshold could never be met, so the gesture would be listed and never
+    // fire -- which is worse than not offering it.
+    //
+    // So the threshold follows the room: most of what is there, floored so a
+    // brush past cannot trigger anything. Directions with the whole screen to
+    // play with keep the full threshold.
+    function swipeThresholdFor(m, horizontal, along, w, h) {
+        var room = Infinity;
+        if (horizontal) {
+            if (along < 0 && m.aLeft)
+                room = w;
+            else if (along > 0 && m.aRight)
+                room = w;
+        } else if (along > 0 && m.aBottom) {
+            room = h;
+        }
+        if (room === Infinity)
+            return root.swipeThreshold;
+        return Math.max(8, Math.min(root.swipeThreshold, room * 0.6));
+    }
+
     function runAction(key) {
         var cmd = String(root.actionFor(key) || "");
         if (cmd === "")
@@ -343,9 +369,9 @@ Item {
             aLeft: true,
             aRight: true,
             up: "up",
-            down: "",
-            left: "",
-            right: ""
+            down: "down",
+            left: "left",
+            right: "right"
         },
         {
             name: "left",
@@ -354,9 +380,9 @@ Item {
             aBottom: true,
             aLeft: true,
             aRight: false,
-            up: "",
+            up: "up",
             down: "down",
-            left: "",
+            left: "left",
             right: "right"
         },
         {
@@ -366,10 +392,10 @@ Item {
             aBottom: true,
             aLeft: false,
             aRight: true,
-            up: "",
+            up: "up",
             down: "down",
             left: "left",
-            right: ""
+            right: "right"
         }
     ]
 
@@ -397,7 +423,7 @@ Item {
                 left: strip.modelData.aLeft
                 right: strip.modelData.aRight
             }
-            implicitWidth: strip.modelData.band === "v" ? root.swipeEdge : 0
+            implicitWidth: strip.modelData.band === "v" ? root.swipeGutter : 0
             implicitHeight: strip.modelData.band === "h" ? root.swipeEdgeBottom : 0
 
             DragHandler {
@@ -416,7 +442,7 @@ Item {
                     // the strip's four directions this is.
                     var horizontal = Math.abs(t.x) > Math.abs(t.y);
                     var along = horizontal ? t.x : t.y;
-                    if (Math.abs(along) < root.swipeThreshold)
+                    if (Math.abs(along) < root.swipeThresholdFor(strip.modelData, horizontal, along, strip.width, strip.height))
                         return;
                     var key = horizontal ? (along < 0 ? strip.modelData.left : strip.modelData.right) : (along < 0 ? strip.modelData.up : strip.modelData.down);
                     if (key === "")
@@ -442,19 +468,45 @@ Item {
         model: root.showButton && root.targetScreens.length > 0 ? [
             {
                 name: "gutter-left",
+                band: "v",
+                aBottom: true,
                 aLeft: true,
                 aRight: false,
+                up: "up",
                 down: "down",
-                left: "",
+                left: "left",
                 right: "right"
             },
             {
                 name: "gutter-right",
+                band: "v",
+                aBottom: true,
                 aLeft: false,
                 aRight: true,
+                up: "up",
                 down: "down",
                 left: "left",
-                right: ""
+                right: "right"
+            },
+            {
+                // The strip below the keyboard. The bottom edge is where a
+                // thumb goes without looking, and it is the one the keyboard
+                // would otherwise take entirely.
+                //
+                // No downward gesture here and nowhere else to put one: a
+                // downward swipe starting on this strip has the strip's own
+                // height before the finger leaves the display, which is under
+                // the threshold, so it could never complete. The menu stays on
+                // the side edges, which are full height.
+                name: "gutter-bottom",
+                band: "h",
+                aBottom: true,
+                aLeft: true,
+                aRight: true,
+                up: "up",
+                down: "down",
+                left: "left",
+                right: "right"
             }
         ] : []
 
@@ -479,8 +531,12 @@ Item {
                 left: gutter.modelData.aLeft
                 right: gutter.modelData.aRight
             }
-            implicitWidth: root.swipeGutter
-            implicitHeight: gutter.screen ? gutter.screen.height * 0.5 : 0
+            // A side gutter only has to reach as far up as the keyboard ever
+            // does; half the screen is comfortably past the 0.45 cap in
+            // oskbd's sizing, and above that the ordinary side strips take
+            // over. The bottom one is just the reserved strip itself.
+            implicitWidth: gutter.modelData.band === "v" ? root.swipeGutter : 0
+            implicitHeight: gutter.modelData.band === "v" ? (gutter.screen ? gutter.screen.height * 0.5 : 0) : root.swipeGutter
 
             // Nothing here is visible until the keyboard is, because until then
             // the whole edge already works and a marker would only be clutter.
@@ -490,9 +546,9 @@ Item {
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(2, root.swipeGutter * 0.14)
-                height: parent.height * 0.42
-                radius: width / 2
+                width: gutter.modelData.band === "v" ? Math.max(2, root.swipeGutter * 0.14) : parent.width * 0.28
+                height: gutter.modelData.band === "v" ? parent.height * 0.42 : Math.max(2, root.swipeGutter * 0.14)
+                radius: Math.min(width, height) / 2
                 color: Util.alpha(Color.popups.text, 0.35)
                 visible: root.keyboardShown
 
@@ -517,12 +573,12 @@ Item {
                     var t = gutterSwipe.activeTranslation;
                     var horizontal = Math.abs(t.x) > Math.abs(t.y);
                     var along = horizontal ? t.x : t.y;
-                    if (Math.abs(along) < root.swipeThreshold)
+                    if (Math.abs(along) < root.swipeThresholdFor(gutter.modelData, horizontal, along, gutter.width, gutter.height))
                         return;
                     // Upward is the keyboard, on both gutters, so the gesture
                     // that summons it is also the one that dismisses it, from
                     // the same place.
-                    var key = horizontal ? (along < 0 ? gutter.modelData.left : gutter.modelData.right) : (along < 0 ? "up" : gutter.modelData.down);
+                    var key = horizontal ? (along < 0 ? gutter.modelData.left : gutter.modelData.right) : (along < 0 ? gutter.modelData.up : gutter.modelData.down);
                     if (key === "")
                         return;
                     gutter.fired = true;

@@ -537,7 +537,12 @@ static void apply_geometry(void) {
   gtk_window_set_default_size(GTK_WINDOW(g_win), kbd_w, kbd_h);
   /* Reserve the strip so tiled windows shrink to sit ABOVE the keyboard
    * instead of being covered by it (the mechanism waybar uses). */
-  gtk_layer_set_exclusive_zone(GTK_WINDOW(g_win), kbd_h);
+  /* Lift the board off the bottom edge by one gutter and reserve that too, so
+   * the strip below it belongs to the swipe surface rather than to the space
+   * bar. Same reasoning as the side gutters: a gesture area over a key is a
+   * key you cannot press. */
+  gtk_layer_set_margin(GTK_WINDOW(g_win), GTK_LAYER_SHELL_EDGE_BOTTOM, g_gutter);
+  gtk_layer_set_exclusive_zone(GTK_WINDOW(g_win), kbd_h + g_gutter);
 }
 
 static void on_monitor_changed(GObject *o, GParamSpec *p, gpointer u) {
