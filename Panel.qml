@@ -157,8 +157,8 @@ Item {
     Process {
         id: keyboard
 
-        // Positional, and oskbd wants all three: layout, variant, options.
-        command: ["fw12-oskbd", root.kbLayout || "us", root.kbVariant, ""]
+        // Positional: layout, variant, options, and the gutter to keep clear.
+        command: ["fw12-oskbd", root.kbLayout || "us", root.kbVariant, "", String(root.swipeGutter)]
         running: false
 
         onExited: function (exitCode) {
@@ -248,6 +248,16 @@ Item {
     // keyboard is out it is the band between the keys and the window above
     // them -- so it gets twice the depth of the side strips.
     readonly property int swipeEdgeBottom: settings.swipeEdgeBottom !== undefined ? settings.swipeEdgeBottom : Style.space(32)
+
+    // The gutter is the swipe strip that survives the keyboard.
+    //
+    // The ordinary side strips respect what other surfaces reserve, so the
+    // moment the keyboard claims the bottom of the screen they stop at the top
+    // of it -- and the whole lower half of the display has nowhere to start a
+    // gesture from. The gutters ignore reservations and run the full height
+    // instead, and the keyboard is told to keep this much clear on each side
+    // (argv[4]) so a gutter is never sitting on top of a key.
+    readonly property int swipeGutter: settings.swipeGutter !== undefined ? settings.swipeGutter : Style.space(30)
     // Short on purpose. A strip is 16 px, so the finger is off it almost at
     // once and the rest of the travel is unguided; asking for 60 px made the
     // gesture feel like a drag rather than a flick.
@@ -418,6 +428,110 @@ Item {
         }
     }
 
+    // Two full-height gutters, one per side, carrying the same four gestures
+    // as the side strips.
+    //
+    // ExclusionMode.Ignore is the whole point: these are the surfaces that do
+    // not step aside for the keyboard, so a swipe works in the same place
+    // whether it is up or not. They only need to reach as far up as the
+    // keyboard ever does -- half the screen is comfortably past the 0.45 cap in
+    // oskbd's sizing -- and above that the ordinary side strips take over.
+    // Where the two overlap they do the same thing, so it does not matter
+    // which one gets the finger.
+    Variants {
+        model: root.showButton && root.targetScreens.length > 0 ? [
+            {
+                name: "gutter-left",
+                aLeft: true,
+                aRight: false,
+                down: "down",
+                left: "",
+                right: "right"
+            },
+            {
+                name: "gutter-right",
+                aLeft: false,
+                aRight: true,
+                down: "down",
+                left: "left",
+                right: ""
+            }
+        ] : []
+
+        PanelWindow {
+            id: gutter
+
+            required property var modelData
+            property bool fired: false
+
+            screen: root.targetScreens[0]
+            color: "transparent"
+
+            WlrLayershell.namespace: "fw12-swipe-" + modelData.name
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            exclusionMode: ExclusionMode.Ignore
+            exclusiveZone: 0
+
+            anchors {
+                top: false
+                bottom: true
+                left: gutter.modelData.aLeft
+                right: gutter.modelData.aRight
+            }
+            implicitWidth: root.swipeGutter
+            implicitHeight: gutter.screen ? gutter.screen.height * 0.5 : 0
+
+            // Nothing here is visible until the keyboard is, because until then
+            // the whole edge already works and a marker would only be clutter.
+            // Once the keyboard is up the live area is no longer where anyone
+            // would guess, so it says where it is: a thin bar down the middle
+            // of the gutter, dim enough to ignore and present enough to find.
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(2, root.swipeGutter * 0.14)
+                height: parent.height * 0.42
+                radius: width / 2
+                color: Util.alpha(Color.popups.text, 0.35)
+                visible: root.keyboardShown
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 150
+                    }
+                }
+            }
+
+            DragHandler {
+                id: gutterSwipe
+
+                target: null
+
+                onActiveChanged: if (gutterSwipe.active)
+                    gutter.fired = false
+
+                onActiveTranslationChanged: {
+                    if (!gutterSwipe.active || gutter.fired)
+                        return;
+                    var t = gutterSwipe.activeTranslation;
+                    var horizontal = Math.abs(t.x) > Math.abs(t.y);
+                    var along = horizontal ? t.x : t.y;
+                    if (Math.abs(along) < root.swipeThreshold)
+                        return;
+                    // Upward is the keyboard, on both gutters, so the gesture
+                    // that summons it is also the one that dismisses it, from
+                    // the same place.
+                    var key = horizontal ? (along < 0 ? gutter.modelData.left : gutter.modelData.right) : (along < 0 ? "up" : gutter.modelData.down);
+                    if (key === "")
+                        return;
+                    gutter.fired = true;
+                    root.runAction(key);
+                }
+            }
+        }
+    }
+
     function savePosition() {
         posFile.setText(JSON.stringify({
             fx: root.fx,
@@ -472,7 +586,7 @@ Item {
             // touch and that part of the button is dead -- which is exactly
             // how it ends up feeling stuck once dragged into a corner. Keep
             // its travel inside the space the strips do not claim.
-            readonly property int insetSide: root.swipeEdge + root.edgeMargin
+            readonly property int insetSide: Math.max(root.swipeEdge, root.swipeGutter) + root.edgeMargin
             readonly property int insetBottom: root.swipeEdgeBottom + root.edgeMargin
             readonly property real travelX: Math.max(0, surface.width - root.buttonSize - surface.insetSide * 2)
             readonly property real travelY: Math.max(0, surface.height - root.buttonSize - root.edgeMargin - surface.insetBottom)

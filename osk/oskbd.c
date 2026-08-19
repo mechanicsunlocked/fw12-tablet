@@ -450,6 +450,7 @@ static const char *logo_path(void) {
  * ------------------------------------------------------------------------ */
 static GtkWidget *g_win, *g_fixed;
 static GtkCssProvider *g_css;
+static int g_gutter;   /* swipe gutter reserved on each side, in logical px */
 
 static void apply_geometry(void) {
   if (!g_win || !g_fixed) return;
@@ -467,6 +468,20 @@ static void apply_geometry(void) {
   const double ASPECT  = 14.25 / 5.7;   /* 2.5 */
   const double MAXFRAC = 0.45;
   int sw = 1200, sh = 750;
+  /* Gutters down both sides, which the keyboard must not sit under.
+   *
+   * They belong to the swipe strips: without them the strips stop at the top
+   * of the keyboard, so while it is up there is nowhere on the lower half of
+   * the screen to start a gesture -- the workspace and menu swipes simply stop
+   * working, which reads as a bug rather than as a boundary.
+   *
+   * Reserving the space is the only honest fix. Putting a strip *over* the
+   * edge keys would mean esc, tab, shift, ctrl, backspace, enter and the arrows
+   * all sit under a gesture catcher, and in portrait the board is full width so
+   * that is exactly what would happen.
+   *
+   * The width comes from the plugin (argv[4]) rather than a constant here, so
+   * there is one number and not two that have to agree. */
   {
     GListModel *mons = gdk_display_get_monitors(gdk_display_get_default());
     GdkMonitor *m0 = mons ? g_list_model_get_item(mons, 0) : NULL;
@@ -476,7 +491,9 @@ static void apply_geometry(void) {
       g_object_unref(m0);   /* g_list_model_get_item() returns an owned ref */
     }
   }
-  int kbd_w = sw, kbd_h = (int)lround(sw / ASPECT);
+  int usable = sw - 2 * g_gutter;
+  if (usable < sw / 2) usable = sw / 2;   /* a nonsense gutter cannot eat the board */
+  int kbd_w = usable, kbd_h = (int)lround(usable / ASPECT);
   int cap = (int)lround(sh * MAXFRAC);
   if (kbd_h > cap) { kbd_h = cap; kbd_w = (int)lround(kbd_h * ASPECT); }
   const char *he = g_getenv("FW12TAB_OSK_HEIGHT");
@@ -533,6 +550,9 @@ static void on_activate(GtkApplication *app, gpointer u) {
   const char *layout  = argv[1] && *argv[1] ? argv[1] : (g_getenv("XKB_DEFAULT_LAYOUT") ?: "us");
   const char *variant = argv[2] ? argv[2] : "";
   const char *options = argv[3] ? argv[3] : "";
+  /* argv[4]: swipe gutter width, passed by the plugin so the two agree. */
+  g_gutter = (argv[3] && argv[4] && *argv[4]) ? atoi(argv[4]) : 30;
+  if (g_gutter < 0 || g_gutter > 200) g_gutter = 30;
 
   /* The Ctrl caps are the only fixed labels that are language-specific: a
    * German board says Strg, everyone else says Ctrl. Every other derived key

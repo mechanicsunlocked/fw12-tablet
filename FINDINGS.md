@@ -1973,3 +1973,67 @@ y 412..750:
 
 So a strip can never sit on top of a key, and the button can never be dragged
 onto one.
+
+---
+
+## 14. A swipe strip that steps aside for the keyboard stops being a swipe strip
+
+The side strips are placed with `exclusionMode: Normal` and `exclusiveZone: 0`
+— reserve nothing, respect what others reserve — which is what lets them sit
+around the bar and the keyboard without any geometry being duplicated (§13).
+
+The cost only shows once the keyboard is up. Measured, keyboard occupying
+y 412..750:
+
+| surface | keyboard hidden | keyboard shown |
+|---|---|---|
+| `fw12-swipe-left` / `-right` | y 26..750 | y 26..412 |
+
+So while the keyboard is out, the entire lower half of the display has nowhere
+to start a gesture from, and the workspace and menu swipes are simply gone.
+That reads as a bug, not as a boundary — nothing on screen says the live area
+moved.
+
+### The fix has to reserve space, not overlay it
+
+The obvious repair — run the strips full height and let them sit over the
+keyboard — is worse than the problem. In landscape the board is 845 px on a
+1200 px screen, so a 30 px strip at each edge lands in empty space. In portrait
+the board is *full width*, so the same strip covers the leftmost and rightmost
+key of every row: esc, tab, shift, ctrl, fn on one side, and del, backspace,
+enter, the arrows on the other.
+
+So the keyboard gives the space up instead. `oskbd` takes the gutter width as
+`argv[4]` and sizes itself to `screen_width - 2 * gutter`, and the gutters are
+separate surfaces with `exclusionMode: Ignore`, which is what stops them
+stepping aside like the ordinary strips do.
+
+### What it costs, measured at 30 px
+
+| | board | side margin | key pitch |
+|---|---|---|---|
+| landscape, before | 845x338 | 177 | 13.0 mm |
+| landscape, after | 845x338 | 177 | 13.0 mm |
+| portrait, before | 750x300 | 0 | 11.5 mm |
+| portrait, after | 690x276 | 30 | 10.6 mm |
+
+**Landscape is unchanged**, because the height cap already held the board to
+845 px and left 177 px of margin — far more than the gutter needs. Only
+portrait pays, and it pays 0.9 mm of key pitch, landing at 10.6 mm against the
+~9 mm where taps start being missed (§5.4).
+
+Confirmed on hardware in both orientations:
+
+```
+landscape  osk 178 412 845 338   gutters 0..30, 1170..1200
+portrait   osk  30 924 690 276   gutters 0..30,  720..750
+```
+
+In portrait the gutters abut the board exactly and overlap it nowhere.
+
+### The gutters have to say where they are
+
+While the keyboard is hidden the whole edge works, so a marker would be
+clutter. Once it is up the live area is no longer where anyone would guess, so
+each gutter draws a thin bar down its middle for exactly as long as the
+keyboard is out. Nobody discovers an invisible 30 px strip by accident.
