@@ -89,38 +89,38 @@ before it builds anything and prints the one `pacman` line that fixes it.
 
 ## Using it
 
-The button appears only while the machine is folded into a tablet.
+### Three ways to show and hide the keyboard
 
-* **Tap** it to show or hide the keyboard.
-* **Drag** it anywhere; the position is remembered, and it is stored as a
-  fraction of the screen so it survives rotation.
-
-Unfolding puts the keyboard away and takes the button with it.
-
-### Keybinds
+All three toggle, so the same action puts it away again:
 
 | | |
 |---|---|
-| `SUPER + B` | show/hide the keyboard, in either mode |
-| `SUPER + R` | lock/unlock auto-rotation; bound only while folded, and the lock clears when you unfold |
+| **The button** | tap the Framework logo. It appears only while folded, and you can drag it anywhere. |
+| **`SUPER + B`** | works in laptop mode too. |
+| **Swipe up** | from the bottom edge of the screen, while folded. |
 
-`SUPER + B` is bound in laptop mode too, because its most useful job is the
-reverse of what it sounds like: dismissing the on-screen keyboard *from* the
-on-screen keyboard, whose Framework key is a real Super. Two taps, and no
-aiming. `SUPER + K` would have been the obvious letter but it is Omarchy's own
-keybindings menu; on a stock install the free `SUPER` letters are A B D E H I M
-N Q U Y Z, and `SUPER + CTRL + <anything>` is completely unused.
+Three of them because each covers where the others are awkward. The button is
+the one you can see, but it is somewhere on the screen and you have to look for
+it. The swipe needs no aiming at all once your thumb knows the edge. And
+`SUPER + B` is the only one that works *from the on-screen keyboard itself* —
+its Framework key is a real Super — which is how you put the keyboard away
+without hunting for a button that the keyboard may well be sitting on top of.
 
-### Swipes
+Unfolding puts the keyboard away and takes the button and the swipe strips with
+it.
 
-Three edge strips, active only while folded:
+### Everything else on the edges
 
-| Swipe | Default |
+While folded, three thin strips along the screen edges carry four gestures:
+
+| Gesture | What it does |
 |---|---|
-| up, from the bottom edge | show/hide the keyboard |
-| down, on either side edge | `omarchy-menu` |
-| right, from the left edge | previous workspace |
-| left, from the right edge | next workspace |
+| swipe **up** from the bottom edge | show/hide the keyboard |
+| swipe **down** on either side edge | `omarchy-menu` |
+| swipe **right** from the left edge | previous workspace |
+| swipe **left** from the right edge | next workspace |
+
+#### Why the strips are where they are
 
 Two placements are deliberate and worth knowing:
 
@@ -136,6 +136,8 @@ The side strips are 16 px; the bottom one is 32, because it is the one you have
 to find by feel — when the keyboard is out it is the band between the keys and
 the window above them. Strips sit in whatever space the bar and keyboard are
 not using, so one is never on top of a key or a bar widget.
+
+#### Changing them
 
 Change any of it in your plugin entry in `~/.config/omarchy/shell.json` — the
 same file and the same place Omarchy keeps every other plugin's settings:
@@ -163,6 +165,17 @@ expression on Omarchy 4**, not the words you would use on a hyprlang config —
 nothing. And **`+1`/`-1` rather than `e+1`/`e-1`**: the `e` forms only visit
 workspaces that already have something on them, so the gesture skips past empty
 ones instead of walking the whole set.
+
+### Keybinds
+
+| | |
+|---|---|
+| `SUPER + B` | show/hide the keyboard, in either mode |
+| `SUPER + R` | lock/unlock auto-rotation; bound only while folded, and the lock clears when you unfold |
+
+`SUPER + K` would have been the obvious letter for the keyboard but it is
+Omarchy's own keybindings menu; on a stock install the free `SUPER` letters are
+A B D E H I M N Q U Y Z, and `SUPER + CTRL + <anything>` is completely unused.
 
 ### Making it always visible
 
