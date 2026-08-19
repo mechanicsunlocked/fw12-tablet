@@ -132,6 +132,20 @@ the bottom strip has only the height of the strip before the finger runs off
 the display — less than the threshold, so it could never complete. The side
 strips are full height.
 
+**The gutters are the strips that survive the keyboard.** The ordinary side
+strips step aside for whatever reserves space, so the moment the keyboard is up
+they stop at the top of it and the whole lower half of the screen goes dead to
+gestures. The two gutters — 30 px down each edge — ignore that and run the full
+height, and the keyboard is told to keep exactly that much clear on each side,
+so a gutter is never sitting on a key. While the keyboard is out each gutter
+draws a thin bar down its middle to say where it is; hidden, the whole edge
+works and the marker would only be clutter.
+
+`swipeGutter` is what the keyboard gives up, so raising it makes the board
+narrower. At the default 30 px landscape is unaffected — the board is already
+845 px on a 1200 px screen — and portrait goes from 750 to 690 px wide, which
+takes the keys from 11.5 mm to 10.6 mm across.
+
 The side strips are 16 px; the bottom one is 32, because it is the one you have
 to find by feel — when the keyboard is out it is the band between the keys and
 the window above them. Strips sit in whatever space the bar and keyboard are
@@ -151,6 +165,7 @@ same file and the same place Omarchy keeps every other plugin's settings:
   "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'",
   "swipeEdge": 16,
   "swipeEdgeBottom": 32,
+  "swipeGutter": 30,
   "swipeThreshold": 30
 }
 ```
