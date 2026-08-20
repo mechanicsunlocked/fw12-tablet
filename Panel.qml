@@ -51,6 +51,7 @@ Item {
     readonly property string home: Quickshell.env("HOME") || ""
     readonly property string modePath: runtimeDir + "/gimbal-mode"
     readonly property string posPath: home + "/.local/state/omarchy/gimbal-button.json"
+    readonly property string padPath: home + "/.local/state/omarchy/gimbal-pads.json"
 
     property string tabletState: ""
     readonly property bool folded: tabletState !== "laptop"
@@ -79,6 +80,50 @@ Item {
     // -----------------------------------------------------------------------
     property real fx: 1.0 // 0 = left edge, 1 = right edge
     property real fy: 0.5 // 0 = top edge, 1 = bottom edge
+
+    // The two swipe pads, in the same fractions and for the same reason. They
+    // start where your thumbs already are when you hold the machine: the two
+    // lower corners. Kept as four plain numbers rather than one object per pad
+    // because a binding cannot see through a nested property change, and the
+    // pads' x and y are bindings.
+    property real padLeftFx: 0.0
+    property real padLeftFy: 1.0
+    property real padRightFx: 1.0
+    property real padRightFy: 1.0
+
+    function padFx(id) {
+        return id === "left" ? root.padLeftFx : root.padRightFx;
+    }
+    function padFy(id) {
+        return id === "left" ? root.padLeftFy : root.padRightFy;
+    }
+    function setPadPos(id, fx, fy) {
+        if (id === "left") {
+            root.padLeftFx = fx;
+            root.padLeftFy = fy;
+        } else {
+            root.padRightFx = fx;
+            root.padRightFy = fy;
+        }
+    }
+
+    // One window per pad per screen. Variants takes a flat model, so the two
+    // lists are crossed here rather than nested.
+    readonly property var padSurfaces: {
+        var out = [];
+        var ss = root.targetScreens;
+        for (var i = 0; i < ss.length; i++) {
+            out.push({
+                screen: ss[i],
+                pad: "left"
+            });
+            out.push({
+                screen: ss[i],
+                pad: "right"
+            });
+        }
+        return out;
+    }
 
     // 56 logical px is ~12 mm across on this panel, comfortably past the ~9 mm
     // that section 5.4 measured as the point where touch targets start being
@@ -210,6 +255,32 @@ Item {
         }
     }
 
+    FileView {
+        id: padFile
+
+        path: root.padPath
+        watchChanges: false
+        printErrors: false
+
+        onLoaded: {
+            try {
+                var p = JSON.parse(text());
+                if (p.left) {
+                    if (typeof p.left.fx === "number")
+                        root.padLeftFx = root.clamp01(p.left.fx);
+                    if (typeof p.left.fy === "number")
+                        root.padLeftFy = root.clamp01(p.left.fy);
+                }
+                if (p.right) {
+                    if (typeof p.right.fx === "number")
+                        root.padRightFx = root.clamp01(p.right.fx);
+                    if (typeof p.right.fy === "number")
+                        root.padRightFy = root.clamp01(p.right.fy);
+                }
+            } catch (e) {}
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Swipe actions
     //
@@ -275,6 +346,9 @@ Item {
     // once and the rest of the travel is unguided; asking for 60 px made the
     // gesture feel like a drag rather than a flick.
     readonly property int swipeThreshold: settings.swipeThreshold !== undefined ? settings.swipeThreshold : Style.space(30)
+
+    // The two swipe pads. Set "pads": false to go back to the edges alone.
+    readonly property bool showPads: settings.pads !== undefined ? settings.pads : true
 
     FileView {
         id: settingsFile
@@ -735,6 +809,19 @@ Item {
         }));
     }
 
+    function savePads() {
+        padFile.setText(JSON.stringify({
+            left: {
+                fx: root.padLeftFx,
+                fy: root.padLeftFy
+            },
+            right: {
+                fx: root.padRightFx,
+                fy: root.padRightFy
+            }
+        }));
+    }
+
     // -----------------------------------------------------------------------
     // Window
     //
@@ -977,4 +1064,234 @@ Item {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Swipe pads
+    //
+    // Two round pads that take all four gestures, sitting where your thumbs
+    // already are when you hold the machine. They exist because an edge strip
+    // is the one place a swipe can never be given room in every direction: at
+    // the left edge there is nothing to the left of your finger, so the
+    // outward gesture has to fire on a few millimetres of travel or not at
+    // all. A pad away from the edge has the whole screen in all four
+    // directions, and the same threshold everywhere.
+    //
+    // Press and drag to fire. There is no hold delay and no flick-versus-move
+    // ambiguity to arbitrate, because moving a pad is behind a separate
+    // gesture entirely: three taps unlock it, three more stick it down. That
+    // is deliberately not something a hand does by accident, and it is why
+    // the press-and-drag can start acting immediately.
+    //
+    // Tap counting is done here rather than left to TapHandler.tapCount, which
+    // keys off the platform's double-click interval -- a mouse setting, on a
+    // control that is only ever touched.
+    // -----------------------------------------------------------------------
+    Variants {
+        model: root.padSurfaces
+
+        PanelWindow {
+            id: padSurface
+
+            required property var modelData
+
+            readonly property string padId: modelData.pad
+
+            screen: modelData.screen
+            visible: root.showButton && root.showPads
+            anchors {
+                top: true
+                bottom: true
+                left: true
+                right: true
+            }
+            color: "transparent"
+
+            WlrLayershell.namespace: "gimbal-pad-" + padSurface.padId
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            // Reserve nothing, but respect what others reserve, exactly as the
+            // button does: the travel is then the space left over by the bar
+            // and the keyboard, so a pad parked at the bottom rides up when
+            // the keyboard appears instead of hiding under it.
+            exclusionMode: ExclusionMode.Normal
+            exclusiveZone: 0
+
+            mask: Region {
+                item: pad
+            }
+
+            // The swipe strips are stacked above this surface, so any part of
+            // a pad overlapping one is dead to the touch. Keep the travel
+            // inside what the strips do not claim.
+            readonly property int insetSide: Math.max(root.swipeEdge, root.swipeGutter) + root.edgeMargin
+            readonly property int insetBottom: root.swipeEdgeBottom + root.edgeMargin
+            readonly property real travelX: Math.max(0, padSurface.width - root.buttonSize - padSurface.insetSide * 2)
+            readonly property real travelY: Math.max(0, padSurface.height - root.buttonSize - root.edgeMargin - padSurface.insetBottom)
+
+            Item {
+                id: pad
+
+                width: root.buttonSize
+                height: root.buttonSize
+
+                x: padSurface.insetSide + padSurface.travelX * root.padFx(padSurface.padId)
+                y: root.edgeMargin + padSurface.travelY * root.padFy(padSurface.padId)
+
+                // Unlocked by three taps, and stays unlocked until three more.
+                property bool loose: false
+                // 0..1 toward committing a swipe, same as the strips use.
+                property real progress: 0
+                property int tapRun: 0
+
+                opacity: padDrag.active ? 1.0 : 0.6
+                scale: pad.loose ? 1.18 : 1.0
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 120
+                        easing.type: Easing.OutCubic
+                    }
+                }
+                Behavior on scale {
+                    NumberAnimation {
+                        duration: 120
+                        easing.type: Easing.OutCubic
+                    }
+                }
+
+                // A ring that grows as a swipe commits. The pad does not move
+                // under the finger -- moving is what the unlocked state does
+                // -- so this is the only thing that can report the gesture.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: parent.width * (1 + 0.5 * pad.progress)
+                    height: width
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: Math.max(1, Style.space(2))
+                    border.color: pad.progress >= 1 ? Color.accent : Util.alpha(Color.popups.text, 0.45)
+                    opacity: (padDrag.active && !pad.loose) ? pad.progress : 0
+                    visible: opacity > 0
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: 90
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: Util.alpha(Color.popups.background, 0.82)
+                    border.width: Math.max(1, Style.space(2))
+                    border.color: pad.loose ? Color.accent : Util.alpha(Color.popups.border, 0.7)
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: 120
+                        }
+                    }
+                }
+
+                // Four arrowheads. The pad has to say what it is without a
+                // label, because nothing about a plain circle suggests that
+                // dragging off it does anything.
+                Shape {
+                    anchors.centerIn: parent
+                    width: root.buttonSize * 0.5
+                    height: width
+
+                    ShapePath {
+                        fillColor: pad.loose ? Color.accent : Util.alpha(Color.popups.text, 0.8)
+                        strokeWidth: 0
+                        strokeColor: "transparent"
+                        scale: Qt.size(root.buttonSize * 0.5 / 100, root.buttonSize * 0.5 / 100)
+
+                        PathSvg {
+                            path: "M50 6 L66 30 L34 30 Z M50 94 L34 70 L66 70 Z M6 50 L30 34 L30 66 Z M94 50 L70 66 L70 34 Z"
+                        }
+                    }
+                }
+
+                // Three taps inside this window unlock or stick the pad. The
+                // window restarts on every tap, so it is three taps in a row
+                // rather than three within a fixed period.
+                Timer {
+                    id: tapWindow
+
+                    interval: 450
+                    onTriggered: pad.tapRun = 0
+                }
+
+                DragHandler {
+                    id: padDrag
+
+                    target: null
+
+                    property real startFx: 0
+                    property real startFy: 0
+                    property bool fired: false
+
+                    onActiveChanged: {
+                        if (padDrag.active) {
+                            padDrag.startFx = root.padFx(padSurface.padId);
+                            padDrag.startFy = root.padFy(padSurface.padId);
+                            padDrag.fired = false;
+                        } else {
+                            if (pad.loose)
+                                root.savePads();
+                            pad.progress = 0;
+                        }
+                    }
+
+                    onActiveTranslationChanged: {
+                        if (!padDrag.active)
+                            return;
+
+                        if (pad.loose) {
+                            var nx = padDrag.startFx;
+                            var ny = padDrag.startFy;
+                            if (padSurface.travelX > 0)
+                                nx = root.clamp01(padDrag.startFx + padDrag.activeTranslation.x / padSurface.travelX);
+                            if (padSurface.travelY > 0)
+                                ny = root.clamp01(padDrag.startFy + padDrag.activeTranslation.y / padSurface.travelY);
+                            root.setPadPos(padSurface.padId, nx, ny);
+                            return;
+                        }
+
+                        if (padDrag.fired)
+                            return;
+
+                        var t = padDrag.activeTranslation;
+                        var horizontal = Math.abs(t.x) > Math.abs(t.y);
+                        var along = horizontal ? t.x : t.y;
+                        pad.progress = Math.min(1, Math.abs(along) / root.swipeThreshold);
+                        if (Math.abs(along) < root.swipeThreshold)
+                            return;
+                        padDrag.fired = true;
+                        root.lastSwipeFrom = "pad-" + padSurface.padId;
+                        root.runAction(horizontal ? (along < 0 ? "left" : "right") : (along < 0 ? "up" : "down"));
+                    }
+                }
+
+                // A swipe takes an exclusive grab past the drag threshold,
+                // which cancels this, so a gesture never counts as a tap.
+                TapHandler {
+                    onTapped: {
+                        pad.tapRun += 1;
+                        tapWindow.restart();
+                        if (pad.tapRun < 3)
+                            return;
+                        pad.tapRun = 0;
+                        tapWindow.stop();
+                        pad.loose = !pad.loose;
+                        if (!pad.loose)
+                            root.savePads();
+                    }
+                }
+            }
+        }
+    }
+
 }
