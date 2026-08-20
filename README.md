@@ -1,25 +1,15 @@
 # Gimbal
 
-Tablet mode for the Framework Laptop 12 on Omarchy 4 / Hyprland.
+**Tablet mode for the Framework Laptop 12, on Omarchy 4 / Hyprland.**
 
-Two halves, both small:
+Fold the screen back and the machine becomes a tablet: the display, the
+touchscreen and the stylus rotate together, two thumb knobs appear for
+gestures, and an on-screen keyboard is one tap away — laid out like the
+Laptop 12's own keyboard, because it is the one your hands already know.
 
-* **`lua/gimbal.lua`** — tablet detection and auto-rotation, loaded
-  straight into Hyprland's Lua config. Screen, touch and stylus rotate
-  together. No daemon.
-* **`osk/`** — `fw12-oskbd`, a GTK4 layer-shell keyboard laid out like the
-  Framework Laptop 12's own: function row under Fn, real Ctrl / Alt / AltGr,
-  the Framework key as Super, and a proper arrow cluster. It uploads the
-  system's xkb keymap, so it types and triggers keybinds exactly as the
-  built-in keyboard does.
-* **`Panel.qml` / `BarWidget.qml`** — an Omarchy shell plugin: two draggable
-  thumb knobs that take every gesture, a bar icon for the keyboard, and a
-  touch settings panel.
+Unfold it and everything goes away again.
 
 `fcitx5` is not touched, stopped, or reconfigured by any of this.
-
-See `ARCHITECTURE.md` for how it works and `FINDINGS.md` for the measurements
-behind each decision.
 
 ---
 
@@ -57,96 +47,166 @@ is harmless on its own.
 
 ---
 
-## Using it
-
-### Four ways to show and hide the keyboard
-
-All four toggle, so the same action puts it away again:
-
-| | |
-|---|---|
-| **The bar icon** | the keyboard glyph in the top bar. It lights up while the keyboard is out. |
-| **A knob** | one tap. Only while folded. |
-| **`SUPER + B`** | works in laptop mode too. |
-| **Swipe up on a knob** | while folded. |
-
-Four of them because each covers where the others are awkward. The bar icon is
-the one you can always see and it says whether the keyboard is up. A knob is
-already under your thumb. And `SUPER + B` is the only one that works *from the
-on-screen keyboard itself* — its Framework key is a real Super — which is how
-you put the keyboard away without hunting for a control the keyboard may be
-sitting on.
-
-Unfolding puts the keyboard away and takes the knobs with it.
+## How to use it
 
 ### The two knobs
 
-While folded, two round knobs appear at the lower corners, marked with four
-arrowheads. **Press one and drag** in any of the four directions:
+Fold the screen back and two round knobs appear at the lower corners, marked
+with four arrowheads. They are the whole control surface.
 
-| Gesture | What it does |
+| Do this | Get this |
 |---|---|
-| swipe **up** | show/hide the keyboard |
-| swipe **down** | the Omarchy menu |
-| swipe **right** | previous workspace |
-| swipe **left** | next workspace |
+| **one tap** | show / hide the keyboard |
+| **press and drag up** | show / hide the keyboard |
+| **press and drag down** | the Omarchy menu |
+| **press and drag left** | next workspace |
+| **press and drag right** | previous workspace |
+| **three quick taps** | unlock the knob — then drag it anywhere |
+| **three quick taps again** | stick it back down |
 
-Both knobs do all four, so there is nothing to remember about which is which.
-Each is its own switch in the settings, so you can run one thumb or two.
+Both knobs do all four gestures, so there is nothing to remember about which is
+which. Each is its own switch in the settings, so you can run one thumb or two.
 
 They start at the lower corners because that is where your thumbs already are
-when you hold the machine, so they cost no reach. And because a knob is not
-against an edge, all four directions have the whole screen to travel and one
-threshold covers them.
+when you hold the machine. Positions are kept as a fraction of the screen, so
+they survive rotation, and they are remembered across reboots.
 
-That last part is why the knobs replaced screen-edge strips entirely. An edge
-strip is a dead end in the direction it is anchored to — swipe left at the left
-edge and the glass runs out, often after ten or fifteen millimetres — so its
-threshold had to be scaled to whatever room was left, and outward swipes never
-felt the same as inward ones. A knob has the whole screen either way.
+A knob fills with your accent colour while the keyboard is out, so it says
+which way it is set, and swells while it is unlocked for moving.
 
-Edge strips also could not hold their ground against a fullscreen window.
-Measured with a fullscreen Moonlight session up: the monitor reported
-`reserved: 0 26 0 0` while the strip was still on screen at `0 26 15 724` — it
-kept taking touches and gave back no space, and only recreating the surface
-restored the reservation. A knob reserves nothing, so it has nothing to lose,
-and it sits on the overlay layer where a fullscreen window cannot cover it.
+### Showing the keyboard
 
-**One tap shows and hides the keyboard**, and the knob fills with the accent
-colour while it is out, so it says which way it is set. **To move a knob, tap
-it three times.** It swells and turns the accent colour to say it is loose;
-then drag it anywhere. **Three taps again** sticks it down and saves it. The position is kept as a fraction of the screen, so it survives
-rotation, and is remembered across reboots in
-`~/.local/state/omarchy/gimbal-pads.json`.
+Four ways, and all four toggle, so the same action puts it away again:
 
-Three taps rather than a hold, because a hold is what a swipe starts with. If
-picking a knob up were a long press, then pressing, pausing to think, and
-swiping would pick it up mid-gesture. Three taps is not something a hand does
-by accident, which is exactly why the press-and-drag can start acting
-immediately with nothing to arbitrate.
+| | |
+|---|---|
+| **Tap a knob** | while folded |
+| **Swipe up on a knob** | while folded |
+| **The bar icon** | the keyboard glyph in the top bar; it lights up while the keyboard is out |
+| **`SUPER + B`** | works in laptop mode too |
 
-The single tap has to wait out the multi-tap window — about a third of a second
-— before it acts. A triple tap opens with a single tap, so firing on the first
-lift would toggle the keyboard three times on the way to unlocking a pad. That
-delay is the price of putting two things on one control, and it is the reason
-the bar icon exists for when you want the keyboard *now*.
+Each covers where the others are awkward. A knob is already under your thumb.
+The bar icon is the one you can always see, and it is instant — a knob tap has
+to wait out the triple-tap window first, about a third of a second. And
+`SUPER + B` is the only one that works *from the on-screen keyboard itself* —
+its Framework key is a real Super — which is how you put the keyboard away
+without hunting for a control the keyboard may be sitting on.
 
-### There are no screen-edge strips
+### The keyboard
 
-There were, for a while: thin live bands down the sides of the screen. Two
-things killed them, both measured rather than felt, and both written up in the
-knobs section above — a threshold that could never be the same in every
-direction, and a reservation a fullscreen window silently took away.
+It is the Laptop 12's own layout: function row under `Fn`, real Ctrl / Alt /
+AltGr, the Framework key as Super, and a proper arrow cluster.
 
-What went with them is worth saying, because it is all upside: the on-screen
-keyboard has the full width of the screen again, which matters most in portrait
-where the key pitch is tightest, and no window is ever narrower than the screen
-just because tablet mode is on.
+Hold `Fn` for F1–F12 on the number row. Tap a modifier once for one-shot, twice
+to lock it. AltGr and dead keys work exactly as they do on the built-in
+keyboard — `AltGr` then `'` then `e` gives `é`.
+
+---
+
+## What it does
+
+### Rotates everything together
+
+Folding past 200° switches to tablet mode: the display transform, the
+touchscreen and the stylus all rotate as one, so a tap lands where you touched
+and the pen draws under its own tip. It runs inside Hyprland's Lua config —
+there is no daemon.
+
+### Types like the real keyboard
+
+The on-screen keyboard uploads the system's own xkb keymap, so its keys arrive
+with the same keycodes as the built-in keyboard's. Keybinds match. Dead keys
+compose. Nothing needs special-casing for it.
+
+It also reads `input:kb_layout` and `input:kb_variant` from Hyprland, so it is
+always the same layout as the physical keyboard and there is nothing to set.
+Change Hyprland and the on-screen keyboard follows.
+
+<details>
+<summary>Picking a US variant</summary>
+
+**US International is not a different keyboard from US.** The physical board is
+the same ANSI board with the same keys in the same places; `intl` is purely the
+software variant. It turns `'` `"` `` ` `` `~` `^` into dead keys and hangs
+more characters off AltGr:
+
+| `kb_variant` | `'` then `e` | good for |
+|---|---|---|
+| *(empty)* | `'e` | typing English and nothing else |
+| `intl` | `é` | typing accents constantly; the price is that `don't` needs a space after the apostrophe |
+| `altgr-intl` | `'e`, and `AltGr+'` then `e` gives `é` | mostly English, accents when you need them — the apostrophe stays an apostrophe |
+
+`altgr-intl` is the one to reach for if `intl` starts fighting you over
+apostrophes.
+
+```
+input {
+    kb_layout = us
+    kb_variant = intl
+}
+```
+</details>
+
+### Stays out of a game
+
+Streaming a game to the tablet, every gesture is aimed at the remote machine,
+and a keyboard sliding up over the picture is never what you meant. So while
+you are **on the workspace a Moonlight window is on**, nothing summons the
+keyboard — not a tap, not a swipe, not the bar icon, not `SUPER + B` — and one
+already up is dismissed when you switch to it.
+
+The Omarchy menu is held back the same way, for a reason worth knowing: it is a
+full-screen layer surface that takes keyboard focus, and a client capturing
+input for a stream does not reliably take that capture back afterwards. One
+swipe for the menu was enough to leave a game that no longer answered the
+touchscreen at all. Ruled out first, by measurement: the menu unmaps cleanly
+and focus does return to the window, so it is the client's capture and not a
+surface left behind — which also means it is not ours to fix, only to avoid.
+
+**Only that workspace.** A stream on workspace 2 is no reason to lose the
+keyboard on workspace 1. And workspace swipes keep working from inside the
+game, because leaving is exactly what you still want.
+
+### Keeps typing working while folded
+
+Folding sets `input:follow_mouse = 2` and unfolding puts it back to `1`.
+Without it, keyboard focus detaches from the window you are typing into for as
+long as a finger rests on the keyboard — what is under your finger is a layer
+surface, not a window — and everything typed in that time goes nowhere. See
+`FINDINGS.md` §11. If your laptop-mode setting is not Hyprland's default of
+`1`, change `LAPTOP_FOLLOW_MOUSE` at the top of the Lua.
+
+---
+
+## Settings
+
+Gimbal puts an icon in the bar. Tapping it opens a settings panel built on
+Omarchy's own controls, so it takes your theme and matches the Wi-Fi panel next
+to it. A touch UI rather than a config file or a TUI, for one reason: this is a
+tablet's settings screen, and the tablet has no keyboard out unless you ask for
+one.
+
+| Setting | What it does |
+|---|---|
+| **Interaction** | Left knob and Right knob, each its own switch |
+| **Gestures** | the command each of the four swipes runs |
+| **Gaming** | hold the keyboard and the menu back while Moonlight is up |
+
+Interaction is two coloured boxes rather than a list or a slider — one thumb or
+two, or neither, so each knob is its own switch. Green is on, red is off: at
+arm's length on a tablet that is the state you can read without looking twice.
+
+Settings are written to `~/.config/omarchy/gimbal.json`. That is deliberately
+not this plugin's entry in `shell.json`: `shell.json` belongs to Omarchy, and a
+plugin that rewrites another program's config file will eventually lose a race
+with it. Values in our file win; anything left unset falls back to the
+`shell.json` entry.
 
 ### Setting the gestures by hand
 
-Everything the settings panel writes can also be set in your plugin entry in `~/.config/omarchy/shell.json` — the
-same file and the same place Omarchy keeps every other plugin's settings:
+Everything the panel writes can also be set in your plugin entry in
+`~/.config/omarchy/shell.json`, the same place Omarchy keeps every other
+plugin's settings:
 
 ```json
 {
@@ -162,21 +222,23 @@ same file and the same place Omarchy keeps every other plugin's settings:
 ```
 
 `@keyboard` and `@menu` are the two built-in actions; anything else is run as a
-command. Set a value to `""` to disable that swipe. The file is watched, so
-changes take effect without restarting anything.
+shell command. Set a value to `""` to disable that swipe. The file is watched,
+so changes take effect without restarting anything.
 
 The two built-ins are named rather than spelled as commands for a reason: they
 are the two that put something on top of whatever you are looking at, and
-naming them is what lets a game refuse them (see **Moonlight** below). A
-command you write yourself always runs.
+naming them is what lets a game refuse them. A command you write yourself
+always runs.
 
-Two things about those workspace commands. **`hyprctl dispatch` takes a Lua
-expression on Omarchy 4**, not the words you would use on a hyprlang config —
-`hyprctl dispatch workspace +1` fails with a Lua syntax error and silently does
-nothing.
+<details>
+<summary>Why the workspace commands look like that</summary>
 
-And **the selector is `r`, not `e` or a bare number**. Measured on this machine
-with workspaces 1, 2 and 5 live:
+**`hyprctl dispatch` takes a Lua expression on Omarchy 4**, not the words you
+would use on a hyprlang config — `hyprctl dispatch workspace +1` fails with a
+Lua syntax error and silently does nothing.
+
+**And the selector is `r`, not `e` or a bare number.** Measured with workspaces
+1, 2 and 5 live:
 
 | from | `+1` / `e+1` | `r+1` | `e-1` | `r-1` |
 |---|---|---|---|---|
@@ -188,120 +250,41 @@ swiping back from 5 landed on 2 whenever 3 and 4 were empty — which reads as a
 swipe that overshot. `r` counts in plain numbers, so one swipe moves one
 workspace whatever is or is not on them, and it stops at 1 rather than
 wrapping.
+</details>
 
-## Settings
+### Always-visible knobs
 
-Gimbal puts an icon in the bar. Tapping it opens a settings panel built on
-Omarchy's own controls, so it takes your theme and matches the Wi-Fi panel next
-to it. It is a touch UI rather than a config file or a TUI for one reason: this
-is a tablet's settings screen, and the tablet has no keyboard out unless you
-ask for one.
-
-| Setting | What it does |
-|---|---|
-| **Interaction** | Left knob and Right knob, each its own switch |
-| **Gestures** | the command each of the four swipes runs |
-| **Gaming** | hold the keyboard and the menu back while Moonlight is up |
-
-Interaction is two coloured boxes rather than a list or a slider. One thumb or
-two, or neither, so each knob is its own switch. Green is on, red is off: at
-arm's length on a tablet that is the state you can read without looking twice.
-
-**Gestures** takes any shell command. `@keyboard` and `@menu` are the two
-built-ins. An empty field falls back to the default, which is shown greyed in
-the box.
-
-Settings are written to `~/.config/omarchy/gimbal.json`. That is deliberately
-not this plugin's entry in `shell.json`: `shell.json` belongs to Omarchy, and a
-plugin that rewrites another program's config file will eventually lose a race
-with it. Values in our file win; anything left unset falls back to the
-`shell.json` entry, which stays usable for anyone who would rather set things
-by hand.
-
-### Moonlight
-
-Streaming a desktop game to the tablet, every gesture is aimed at the remote
-machine, and a keyboard sliding up over the picture is never what you meant. So
-while you are **on the workspace a Moonlight window is on**, nothing summons
-the keyboard — not a swipe, not a knob, not the bar icon, not `SUPER + B` — and
-one already up is dismissed when you switch to it. The Omarchy menu is held
-back the same way, for a reason worth knowing: it is a full-screen layer
-surface that takes keyboard focus, and a client capturing input for a stream
-does not reliably take that capture back afterwards. One swipe for the menu was
-enough to leave a game that no longer answered the touchscreen at all. Measured
-and ruled out first: the menu itself unmaps cleanly and focus does return to
-the window, so it is the client's capture, not a surface left behind — which
-also means it is not ours to fix, only to avoid.
-
-Workspace swipes keep working, because leaving the game is exactly what you
-still want. Only the two built-in actions can be refused; a command you wrote
-yourself always runs.
-
-Only that workspace. A stream running on workspace 2 is no reason to lose the
-keyboard on workspace 1, and going somewhere else on the tablet while a game
-sits where you left it is the ordinary thing to do.
-
-Which workspace a window is on is a Hyprland question rather than a Wayland
-one — the foreign-toplevel protocol has no notion of workspaces — so it is
-asked of Hyprland directly, and it arrives as an event rather than a poll:
-there is no interval to pick and nothing to be stale by.
-
-### Making it always visible
-
-Set `tabletOnly` to `false` at the top of `Panel.qml`.
-
-### Focus while folded
-
-Folding sets `input:follow_mouse = 2` and unfolding puts it back to `1`.
-Without it, keyboard focus detaches from the window you are typing into for as
-long as a finger rests on the keyboard — because what is under your finger is a
-layer surface, not a window — and everything typed in that time goes nowhere.
-See `FINDINGS.md` §11. If your laptop-mode setting is not Hyprland's default of
-`1`, change `LAPTOP_FOLLOW_MOUSE` at the top of the Lua.
-
-### Keyboard layout
-
-There is nothing to set. The keyboard reads `input:kb_layout` and
-`input:kb_variant` from Hyprland and takes its keymap and its key legends from
-there, so it is always the same layout as the physical keyboard. Change
-Hyprland and it follows. For US International:
-
-```
-input {
-    kb_layout = us
-    kb_variant = intl
-}
-```
-
-That combination is checked: `us`/`intl` comes up as a US board with `alt gr`
-and an acute dead key on the apostrophe, which is the whole point of the
-variant. Nothing in the keyboard needed changing to support it — it reads the
-layout, it does not carry a copy of one.
-
-**US International is not a different keyboard from US.** The physical board is
-the same ANSI board with the same keys in the same places; `intl` is purely the
-software variant, and all it does is turn `'` `"` `` ` `` `~` `^` into dead keys
-and hang more characters off AltGr. So a plain US ANSI machine can run either,
-and the choice is only about how you want to type accents:
-
-| `kb_variant` | `'` then `e` | good for |
-|---|---|---|
-| *(empty)* | `'e` | typing English and nothing else |
-| `intl` | `é` | typing accents constantly; the price is that `don't` needs a space after the apostrophe |
-| `altgr-intl` | `'e`, and `AltGr+'` then `e` gives `é` | mostly English, accents when you need them — the apostrophe stays an apostrophe |
-
-`altgr-intl` is the one to reach for if `intl` starts fighting you over
-apostrophes. Whatever you pick, the on-screen keyboard follows it; there is
-nothing to change here.
-
-Because it uploads the real keymap rather than inventing one, AltGr and dead
-keys work on it exactly as they do on the built-in keyboard — `AltGr` then `'`
-then `e` gives `é`. Hold `Fn` for F1–F12 on the number row. Tap a modifier once
-for one-shot, twice to lock it.
+Set `tabletOnly` to `false` at the top of `Panel.qml` to keep them in laptop
+mode too.
 
 ---
 
-## About the install
+## Under the hood
+
+Three parts, all small:
+
+* **`lua/gimbal.lua`** — tablet detection and auto-rotation, loaded straight
+  into Hyprland's Lua config. No daemon.
+* **`osk/`** — `fw12-oskbd`, a GTK4 layer-shell keyboard in C.
+* **`Panel.qml`** / **`BarWidget.qml`** — the Omarchy shell plugin: the knobs,
+  the bar icon, and the settings panel.
+
+`ARCHITECTURE.md` is how it works; `FINDINGS.md` is the measurements behind
+each decision.
+
+### Checking on it
+
+```bash
+cat "$XDG_RUNTIME_DIR/gimbal-mode"           # tablet | laptop
+pgrep -x fw12-oskbd                          # is the keyboard up
+hyprctl layers | grep -E 'osk|gimbal'        # what is on screen
+hyprctl eval 'require("hypr.gimbal").status()'
+```
+
+To put the knobs back where they started, delete
+`~/.local/state/omarchy/gimbal-pads.json` and restart the shell.
+
+### About the install
 
 Two commands rather than one because Omarchy's installer deliberately never
 runs code from a plugin it has just cloned, which is the right call. So the
@@ -324,28 +307,13 @@ It builds the keyboard, installs the rotation module, adds one `require` line
 to your Hyprland config, and restarts the shell.
 
 Gimbal is an ordinary Omarchy shell plugin — a git repo with a `manifest.json`
-at its root — so everything `omarchy plugin` knows how to do applies to it.
-`omarchy plugin --help` lists the rest, including `update` and `remove`.
+at its root — so everything `omarchy plugin` knows how to do applies to it;
+`omarchy plugin --help` lists the rest.
 
 **Requirements:** `gtk4`, `gtk4-layer-shell`, `libxkbcommon`, `wayland`,
 `pkgconf`, `gcc` — all in the official Arch repos, nothing from the AUR.
 `install.sh` checks for them before it builds anything and prints the one
 `pacman` line that fixes it.
-
----
-
-## Checking on it
-
-```bash
-cat "$XDG_RUNTIME_DIR/gimbal-mode"      # tablet | laptop
-pgrep -x fw12-oskbd                          # is the keyboard up
-hyprctl layers | grep -E 'osk|gimbal'        # what is on screen
-hyprctl eval 'require("hypr.gimbal").status()'
-```
-
-To put the knobs back where they started without touching them, delete
-`~/.local/state/omarchy/gimbal-pads.json` and restart the shell; they go back
-to the two lower corners.
 
 ---
 
@@ -355,14 +323,18 @@ Gimbal is an independent community project. It is not made by, endorsed by, or
 affiliated with Framework Computer Inc.
 
 "Framework" and the Framework logo are trademarks of Framework Computer Inc.
-It appears here in one place, descriptively: the Super key of the on-screen
-keyboard, which reproduces the legend printed on that key of the actual
-laptop.
+The logo appears here in one place, descriptively: the Super key of the
+on-screen keyboard, which reproduces the legend printed on that key of the
+actual laptop.
 
-The logo is an optional asset, not part of the program. If it is not installed,
-the Super key falls back to a `❖` glyph and everything else works unchanged, so
-the mark can be removed entirely by deleting one file:
+It is an optional asset, not part of the program. If it is not installed, the
+Super key falls back to a `❖` glyph and everything else works unchanged, so the
+mark can be removed entirely by deleting one file:
 
 ```bash
 rm ~/.local/share/gimbal/framework-logo.svg
 ```
+
+---
+
+MIT. See `LICENSE`.
