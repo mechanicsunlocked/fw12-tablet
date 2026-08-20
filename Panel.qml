@@ -1109,11 +1109,15 @@ Item {
             WlrLayershell.namespace: "gimbal-pad-" + padSurface.padId
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            // Reserve nothing, but respect what others reserve, exactly as the
-            // button does: the travel is then the space left over by the bar
-            // and the keyboard, so a pad parked at the bottom rides up when
-            // the keyboard appears instead of hiding under it.
-            exclusionMode: ExclusionMode.Normal
+            // Reserve nothing, and ignore what others reserve. A pad is a
+            // control you learn the position of with your thumb, so it has to
+            // be in the same place every time -- if the window shrank to the
+            // space left by the keyboard, every pad would jump the moment the
+            // keyboard appeared. The pads sit on the overlay layer and the
+            // keyboard on the top layer, so a pad left over the keyboard is
+            // drawn above it and still takes the touch; it covers whatever key
+            // is under it, which is the reason they can be dragged.
+            exclusionMode: ExclusionMode.Ignore
             exclusiveZone: 0
 
             mask: Region {
