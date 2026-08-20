@@ -248,6 +248,54 @@ exists rather than stopping dead. `-1` is the only one of the four that can do
 nothing at all, and a swipe that does nothing reads as broken: there is no
 feedback to tell you that you are simply at the end.
 
+## Settings
+
+Gimbal puts an icon in the bar. Tapping it opens a settings panel built on
+Omarchy's own controls, so it takes your theme and matches the Wi-Fi panel next
+to it. It is a touch UI rather than a config file or a TUI for one reason: this
+is a tablet's settings screen, and the tablet has no keyboard out unless you
+ask for one.
+
+| Setting | What it does |
+|---|---|
+| **Interaction** | Edges, Pads, or Both |
+| **Edge width** | how wide the always-live gutters are, 0–60 px |
+| **Gestures** | the command each of the four swipes runs |
+| **Gaming** | hold the keyboard back while Moonlight is up |
+
+Interaction is a row of three buttons rather than a slider: with three states
+and no order between them, a slider makes you aim, and a button you can hit
+with a thumb is the point.
+
+Choosing **Pads** turns the edge strips off entirely, which gives the keyboard
+back the width the gutters were taking — worth doing in portrait, where the key
+pitch is the tightest.
+
+**Gestures** takes any shell command. `@keyboard` is the one built-in: it shows
+and hides the on-screen keyboard. An empty field falls back to the default,
+which is shown greyed in the box.
+
+Settings are written to `~/.config/omarchy/gimbal.json`. That is deliberately
+not this plugin's entry in `shell.json`: `shell.json` belongs to Omarchy, and a
+plugin that rewrites another program's config file will eventually lose a race
+with it. Values in our file win; anything left unset falls back to the
+`shell.json` entry, which stays usable for anyone who would rather set things
+by hand.
+
+### Moonlight
+
+Streaming a desktop game to the tablet, every gesture is aimed at the remote
+machine, and a keyboard sliding up over the picture is never what you meant. So
+while a Moonlight window is open, nothing summons the keyboard — not a swipe,
+not the button, not `SUPER + B` — and one already up is dismissed. The gestures
+keep working, because switching workspace away from the game is exactly what
+you still want.
+
+It watches the Wayland toplevel list rather than polling for a process, so
+there is no interval to pick and nothing to be stale by. It also asks the right
+question: a Moonlight *window* is what matters, not a Moonlight binary that
+happens to be resident.
+
 ### Making it always visible
 
 Set `tabletOnly` to `false` at the top of `Panel.qml`.
