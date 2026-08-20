@@ -42,6 +42,7 @@ typedef struct Key {
   const char *fn_label;
   GtkWidget *button;   /* the key widget (a styled GtkBox) */
   GtkWidget *lbl;      /* GtkLabel inside (NULL for the SVG key) */
+  GtkWidget *logo;     /* GtkPicture inside the SVG key (NULL for the rest) */
   uint32_t down_code;  /* evdev code currently held down (0 = none) */
   GtkGesture *gest;    /* the click gesture, so a lost release can be detected */
 } Key;
@@ -528,8 +529,14 @@ static void apply_geometry(void) {
     if (!k->button) continue;
     int x0 = (int)lround(k->col * sx), x1 = (int)lround((k->col + k->wspan) * sx);
     int y0 = (int)lround(k->row * sy), y1 = (int)lround((k->row + k->hspan) * sy);
-    gtk_widget_set_size_request(k->button, (x1 - x0) - 2 * inset, (y1 - y0) - 2 * inset);
+    int kw = (x1 - x0) - 2 * inset, kh = (y1 - y0) - 2 * inset;
+    gtk_widget_set_size_request(k->button, kw, kh);
     gtk_fixed_move(GTK_FIXED(g_fixed), k->button, x0 + inset, y0 + inset);
+    /* Half the key it sits on, and re-measured on every fold so it keeps that
+     * proportion when the board changes size. */
+    if (k->logo) {
+      gtk_image_set_pixel_size(GTK_IMAGE(k->logo), kh / 2);
+    }
   }
 
   gtk_widget_set_size_request(g_fixed, kbd_w, kbd_h);
@@ -627,9 +634,12 @@ static void on_activate(GtkApplication *app, gpointer u) {
     if (k->type == KT_SUPER) {
       const char *lp = logo_path();
       if (g_file_test(lp, G_FILE_TEST_EXISTS)) {
-        child = gtk_picture_new_for_filename(lp);
-        gtk_picture_set_content_fit(GTK_PICTURE(child), GTK_CONTENT_FIT_CONTAIN);
-        gtk_widget_set_size_request(child, 22, 22);
+        /* GtkImage rather than GtkPicture: a picture asks for the SVG's own
+         * natural size and a size request only ever raises that floor, so it
+         * filled the key however small the request. An image has an explicit
+         * pixel size, which is the thing being set here. */
+        child = gtk_image_new_from_file(lp);
+        k->logo = child;   /* sized against the key in apply_geometry() */
       } else {
         child = gtk_label_new("❖");   /* fallback glyph if the logo asset is missing */
       }
