@@ -49,6 +49,8 @@ else
     note "removed $plugin_dir"
 fi
 rm -f "$HOME/.local/state/omarchy/gimbal-button.json"
+rm -f "$HOME/.local/state/omarchy/gimbal-pads.json"
+rm -f "$HOME/.config/omarchy/gimbal.json"
 
 omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
 omarchy-restart-shell >/dev/null 2>&1 || true

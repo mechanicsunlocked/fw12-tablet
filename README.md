@@ -12,8 +12,9 @@ Two halves, both small:
   the Framework key as Super, and a proper arrow cluster. It uploads the
   system's xkb keymap, so it types and triggers keybinds exactly as the
   built-in keyboard does.
-* **`plugin/`** — an Omarchy shell plugin: one round, draggable button that
-  shows and hides the keyboard.
+* **`Panel.qml` / `BarWidget.qml`** — an Omarchy shell plugin: two draggable
+  thumb pads and two live screen edges for gestures, a bar icon for the
+  keyboard, and a touch settings panel.
 
 `fcitx5` is not touched, stopped, or reconfigured by any of this.
 
@@ -32,7 +33,7 @@ omarchy plugin add https://github.com/mechanicsunlocked/gimbal.git --enable --ye
 ~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/install.sh
 ```
 
-The first command clones and enables the button. The second builds the
+The first command clones and enables the plugin. The second builds the
 keyboard, installs the rotation module, adds one `require` line to your
 Hyprland config, and restarts the shell. It needs no root, touches nothing
 outside `$HOME`, and is also how you upgrade — run it again after
@@ -89,42 +90,26 @@ before it builds anything and prints the one `pacman` line that fixes it.
 
 ## Using it
 
-### Three ways to show and hide the keyboard
+### Four ways to show and hide the keyboard
 
-All three toggle, so the same action puts it away again:
+All four toggle, so the same action puts it away again:
 
 | | |
 |---|---|
-| **The button** | tap the Framework logo. It appears only while folded. |
+| **The bar icon** | the keyboard glyph in the top bar. It lights up while the keyboard is out. |
+| **A swipe pad** | one tap. Only while folded. |
 | **`SUPER + B`** | works in laptop mode too. |
-| **Swipe up** | from the bottom edge of the screen, while folded. |
+| **Swipe up** | from either side edge, while folded. |
 
-Three of them because each covers where the others are awkward. The button is
-the one you can see, but it is somewhere on the screen and you have to look for
-it. The swipe needs no aiming at all once your thumb knows the edge. And
-`SUPER + B` is the only one that works *from the on-screen keyboard itself* —
-its Framework key is a real Super — which is how you put the keyboard away
-without hunting for a button that the keyboard may well be sitting on top of.
+Four of them because each covers where the others are awkward. The bar icon is
+the one you can always see and it says whether the keyboard is up. A pad is
+already under your thumb. The swipe needs no aiming at all once your thumb
+knows the edge. And `SUPER + B` is the only one that works *from the on-screen
+keyboard itself* — its Framework key is a real Super — which is how you put the
+keyboard away without hunting for a control the keyboard may be sitting on.
 
-Unfolding puts the keyboard away and takes the button and the swipe strips with
+Unfolding puts the keyboard away and takes the pads and the swipe strips with
 it.
-
-### The button is also a swipe pad
-
-**Flick it** in any of the four directions for the same four actions as the
-edges. **Hold it** for a moment to pick it up and move it; it swells slightly
-to say it is loose, and the position is remembered as a fraction of the screen
-so it survives rotation.
-
-It is worth having because it is the only control that is not against an edge.
-An edge strip can never offer the direction pointing off the display — swipe
-left at the left edge and the glass runs out — so on the edges one direction of
-four is always weak. From the button every direction has the whole screen, and
-you can put it wherever your thumb actually rests.
-
-The hold is what keeps moving and flicking apart. Without it they are the same
-motion and one of them has to lose; holding is also the rarer intent, since a
-button gets moved once and used daily.
 
 ### The two swipe pads
 
@@ -138,7 +123,9 @@ against an edge, all four directions have the whole screen to travel and the
 same threshold applies to each — which is the one thing an edge strip can never
 offer, since at the left edge there is nothing to the left of your finger.
 
-**To move a pad, tap it three times.** It swells and turns the accent colour to
+**One tap shows and hides the keyboard**, and the pad fills with the accent
+colour while it is out, so it says which way it is set. **To move a pad, tap it
+three times.** It swells and turns the accent colour to
 say it is loose; then drag it anywhere. **Three taps again** sticks it down and
 saves it. The position is kept as a fraction of the screen, so it survives
 rotation, and is remembered across reboots in
@@ -150,13 +137,16 @@ swiping would pick it up mid-gesture. Three taps is not something a hand does
 by accident, which is exactly why the press-and-drag can start acting
 immediately with nothing to arbitrate.
 
-If you would rather have the edges alone, set `"pads": false` on this plugin's
-entry in `~/.config/omarchy/shell.json`.
+The single tap has to wait out the multi-tap window — about a third of a second
+— before it acts. A triple tap opens with a single tap, so firing on the first
+lift would toggle the keyboard three times on the way to unlocking a pad. That
+delay is the price of putting two things on one control, and it is the reason
+the bar icon exists for when you want the keyboard *now*.
 
 ### Everything else on the edges
 
-While folded, every screen edge is live, and **each one takes all four
-directions**:
+While folded, **both side edges are live**, and each one takes all four
+directions:
 
 | Gesture | What it does |
 |---|---|
@@ -168,28 +158,45 @@ directions**:
 So you never have to remember which edge does what — whichever one your thumb
 finds, all four work there.
 
-#### The gutters, and why the keyboard gets smaller
+#### The edges take their space out of the window area
+
+An edge strip that catches swipes also catches whatever is underneath it: the
+close button of a maximised window, a page's scrollbar. Wayland offers no way
+out of that. The surface under your finger at touch-down receives the touch,
+and it cannot look at it, decide it was meant for something else, and hand it
+back — there is no forwarding in the protocol.
+
+So the strips **reserve** the space they cover. Windows are laid out narrower
+by exactly the width you set, and everything a window still draws belongs to
+the window. You lose some room; in exchange there is a clear boundary and
+nothing is fighting over the same pixels.
+
+The width is a slider in the settings panel, 0 to 60 px. At 20 px you give up
+40 px of a 1200 px landscape screen, or 40 of 750 in portrait.
+
+#### There is no bottom strip
+
+There used to be. A downward swipe starting on it had only the strip's own
+height before the finger ran off the display, which is under any usable
+threshold, so that direction could never fire there. And it sat in the one band
+where reserved space costs the on-screen keyboard height it actually needs. The
+side strips are full height and have room for all four directions.
+
+#### The gutters
 
 The plain edge strips step aside for anything that reserves space, which is
 what keeps them clear of the bar. It also means that the moment the keyboard is
-up they stop at the top of it, and the whole lower part of the screen goes dead
-to gestures.
+up they stop at the top of it, and the lower half of the screen goes dead to
+gestures.
 
-So there are **gutters** as well: 30 px down each side and 30 px across the
-bottom, which ignore reservations and stay live whatever else is on screen. The
-keyboard is told to keep exactly that much clear on all three edges, so a gutter
-is never sitting on a key — because a gesture area over a key is a key you
-cannot press, and in portrait the board is full width, so a strip laid over the
-edge would cover esc, tab, shift, ctrl and fn on one side and del, backspace,
-enter and the arrows on the other.
+So there are **gutters** as well: the same width down each side, reaching half
+the screen height from the bottom, which ignore reservations and stay live
+whatever else is on screen. Where they overlap the keyboard they take the
+outermost sliver of its edge keys — which is the trade, and why the width is
+yours to set.
 
 While the keyboard is out, each gutter draws a thin bar down its middle to say
 where it is. Hidden, the whole edge works and the marker would only be clutter.
-
-`swipeGutter` is the space the keyboard gives up, so raising it makes the board
-narrower. At the default 30 px landscape is unaffected — the board is already
-845 px on a 1200 px screen — and portrait goes from 750 to 690 px wide, taking
-the keys from 11.5 mm to 10.6 mm across.
 
 #### There is no top strip
 
@@ -215,10 +222,11 @@ same file and the same place Omarchy keeps every other plugin's settings:
   "id": "io.github.mechanicsunlocked.gimbal",
   "swipeUp": "@keyboard",
   "swipeDown": "omarchy-menu",
-  "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
-  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'",
+  "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'",
+  "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r+1\" })'",
+  "edges": true,
+  "pads": true,
   "swipeEdge": 16,
-  "swipeEdgeBottom": 32,
   "swipeGutter": 30,
   "swipeThreshold": 30
 }
@@ -233,20 +241,19 @@ expression on Omarchy 4**, not the words you would use on a hyprlang config —
 `hyprctl dispatch workspace +1` fails with a Lua syntax error and silently does
 nothing.
 
-And **the two directions use different forms on purpose**, because a swipe has
-to always do something. Measured with workspaces 1–4 live:
+And **the selector is `r`, not `e` or a bare number**. Measured on this machine
+with workspaces 1, 2 and 5 live:
 
-| | `+1` | `e+1` | `-1` | `e-1` |
+| from | `+1` / `e+1` | `r+1` | `e-1` | `r-1` |
 |---|---|---|---|---|
-| from workspace 4 (the end) | **new workspace 5** | wraps to 1 | — | — |
-| from workspace 1 (the start) | — | — | **stays at 1** | wraps to 4 |
+| workspace 5 | — | 6 | **2** | 4 |
+| workspace 1 | 2 | 2 | — | **1** |
 
-Forward is `+1`, so swiping past the end opens a new workspace — which is the
-point of swiping past the end. Hyprland drops it again when you leave it empty,
-so they do not pile up. Back is `e-1`, so it wraps to the last workspace that
-exists rather than stopping dead. `-1` is the only one of the four that can do
-nothing at all, and a swipe that does nothing reads as broken: there is no
-feedback to tell you that you are simply at the end.
+The `e` selectors walk to the next workspace that *has a window on it*, so
+swiping back from 5 landed on 2 whenever 3 and 4 were empty — which reads as a
+swipe that overshot. `r` counts in plain numbers, so one swipe moves one
+workspace whatever is or is not on them, and it stops at 1 rather than
+wrapping.
 
 ## Settings
 
@@ -258,18 +265,19 @@ ask for one.
 
 | Setting | What it does |
 |---|---|
-| **Interaction** | Edges, Pads, or Both |
-| **Edge width** | how wide the always-live gutters are, 0–60 px |
+| **Interaction** | Edge and Pads, each its own switch |
+| **Edge width** | how wide the side strips are, 0–60 px |
 | **Gestures** | the command each of the four swipes runs |
 | **Gaming** | hold the keyboard back while Moonlight is up |
 
-Interaction is a row of three buttons rather than a slider: with three states
-and no order between them, a slider makes you aim, and a button you can hit
-with a thumb is the point.
+Interaction is two coloured boxes rather than a list or a slider. They are not
+alternatives — you can want the pads without the edges, or neither — so each is
+its own switch. Green is on, red is off: at arm's length on a tablet that is
+the state you can read without looking twice.
 
-Choosing **Pads** turns the edge strips off entirely, which gives the keyboard
-back the width the gutters were taking — worth doing in portrait, where the key
-pitch is the tightest.
+Turning the edges off gives the keyboard back the width the gutters were
+taking, and gives windows back the space the strips reserve. Worth doing in
+portrait, where the key pitch is tightest.
 
 **Gestures** takes any shell command. `@keyboard` is the one built-in: it shows
 and hides the on-screen keyboard. An empty field falls back to the default,
@@ -286,15 +294,19 @@ by hand.
 
 Streaming a desktop game to the tablet, every gesture is aimed at the remote
 machine, and a keyboard sliding up over the picture is never what you meant. So
-while a Moonlight window is open, nothing summons the keyboard — not a swipe,
-not the button, not `SUPER + B` — and one already up is dismissed. The gestures
-keep working, because switching workspace away from the game is exactly what
-you still want.
+while you are **on the workspace a Moonlight window is on**, nothing summons
+the keyboard — not a swipe, not a pad, not the bar icon, not `SUPER + B` — and
+one already up is dismissed when you switch to it. The gestures keep working,
+because switching workspace away from the game is exactly what you still want.
 
-It watches the Wayland toplevel list rather than polling for a process, so
-there is no interval to pick and nothing to be stale by. It also asks the right
-question: a Moonlight *window* is what matters, not a Moonlight binary that
-happens to be resident.
+Only that workspace. A stream running on workspace 2 is no reason to lose the
+keyboard on workspace 1, and going somewhere else on the tablet while a game
+sits where you left it is the ordinary thing to do.
+
+Which workspace a window is on is a Hyprland question rather than a Wayland
+one — the foreign-toplevel protocol has no notion of workspaces — so it is
+asked of Hyprland directly, and it arrives as an event rather than a poll:
+there is no interval to pick and nothing to be stale by.
 
 ### Making it always visible
 
@@ -360,9 +372,9 @@ hyprctl layers | grep -E 'osk|fw12'          # what is on screen
 hyprctl eval 'require("hypr.gimbal").status()'
 ```
 
-To move the button without touching it, delete
-`~/.local/state/omarchy/gimbal-button.json` and restart the shell; it goes
-back to the right edge.
+To put the pads back where they started without touching them, delete
+`~/.local/state/omarchy/gimbal-pads.json` and restart the shell; they go back
+to the two lower corners.
 
 ---
 
@@ -372,10 +384,9 @@ Gimbal is an independent community project. It is not made by, endorsed by, or
 affiliated with Framework Computer Inc.
 
 "Framework" and the Framework logo are trademarks of Framework Computer Inc.
-They appear here in two places, both descriptive: the button that summons the
-keyboard, which controls hardware-specific behaviour on a Framework machine,
-and the Super key of the on-screen keyboard, which reproduces the legend
-printed on that key of the actual laptop.
+It appears here in one place, descriptively: the Super key of the on-screen
+keyboard, which reproduces the legend printed on that key of the actual
+laptop.
 
 The logo is an optional asset, not part of the program. If it is not installed,
 the Super key falls back to a `❖` glyph and everything else works unchanged, so
