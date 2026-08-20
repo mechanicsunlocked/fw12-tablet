@@ -217,7 +217,14 @@ Item {
         return false;
     }
 
-    readonly property bool keyboardBlocked: root.blockOnMoonlight && root.moonlightFocused
+    // Everything that would land on top of the game is held back, not just the
+    // keyboard. The menu is a full-screen layer surface that takes keyboard
+    // focus, and a client capturing input for a stream does not reliably get
+    // it back afterwards -- which is how one swipe for the menu ends with a
+    // game that no longer answers the touchscreen. Switching workspace stays
+    // available, because leaving is the thing you still want.
+    readonly property bool interruptionsBlocked: root.blockOnMoonlight && root.moonlightFocused
+    readonly property bool keyboardBlocked: root.interruptionsBlocked
 
     // A game that starts while the keyboard is out takes the screen back.
     onKeyboardBlockedChanged: {
@@ -359,15 +366,15 @@ Item {
     //
     //   { "id": "io.github.mechanicsunlocked.gimbal",
     //     "swipeUp":    "@keyboard",
-    //     "swipeDown":  "omarchy-menu",
+    //     "swipeDown":  "@menu",
     //     "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'",
     //     "swipeLeft":  "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r+1\" })'",
     //     "padLeft":    true,
     //     "padRight":   true,
     //     "swipeThreshold": 30 }
     //
-    // Swipes are named for the direction your finger travels. "@keyboard" is
-    // the one built-in action; anything else is run as a command.
+    // Swipes are named for the direction your finger travels. "@keyboard" and
+    // "@menu" are the two built-in actions; anything else is run as a command.
     // -----------------------------------------------------------------------
     property var settings: ({})
 
@@ -412,7 +419,7 @@ Item {
     // a three-way choice cannot express. `mode` stays readable as a fallback
     // so a config written before this still means what it meant.
     readonly property string swipeUp: root.opt("swipeUp", "@keyboard")
-    readonly property string swipeDown: root.opt("swipeDown", "omarchy-menu")
+    readonly property string swipeDown: root.opt("swipeDown", "@menu")
     // `hyprctl dispatch` takes a *Lua expression* on Omarchy 4, not the
     // hyprland-1 words: `hyprctl dispatch workspace e+1` fails with a Lua
     // syntax error and does nothing. This is the form Omarchy's own workspace
@@ -481,6 +488,42 @@ Item {
         if (key === "down") return root.swipeDown;
         if (key === "left") return root.swipeLeft;
         return root.swipeRight;
+    }
+
+    // Which surface the last gesture came from. Only for the log, but the
+    // log is how the last two swipe reports were settled, and "it fired" and
+    // "it fired *there*" are different facts.
+    property string lastSwipeFrom: ""
+
+    // The two built-in actions are the two that put something on top of what
+    // you are looking at, which is why they are named rather than spelled as
+    // commands: naming them is what lets a game refuse both. Anything you type
+    // in yourself is your business and always runs.
+    function runAction(key) {
+        var cmd = String(root.actionFor(key) || "");
+        if (cmd === "")
+            return;
+        if (cmd === "@keyboard") {
+            root.requestKeyboard(!root.keyboardShown);
+            return;
+        }
+        if (cmd === "@menu") {
+            if (root.interruptionsBlocked)
+                return;
+            menuProc.running = false;
+            menuProc.running = true;
+            return;
+        }
+        console.log("gimbal: swipe " + key + " on " + root.lastSwipeFrom + " -> " + cmd);
+        actionProc.running = false;
+        actionProc.command = ["sh", "-c", cmd];
+        actionProc.running = true;
+    }
+
+    Process {
+        id: menuProc
+
+        command: ["omarchy-menu"]
     }
 
     // `sh -c` because the value is a command line written by a person, and

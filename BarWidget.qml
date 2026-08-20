@@ -76,7 +76,7 @@ Panel {
     readonly property var fallback: ({
             "mode": "both",
             "swipeUp": "@keyboard",
-            "swipeDown": "omarchy-menu",
+            "swipeDown": "@menu",
             "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'",
             "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r+1\" })'",
             "blockOnMoonlight": true
