@@ -52,7 +52,6 @@ Item {
     readonly property string home: Quickshell.env("HOME") || ""
     readonly property string modePath: runtimeDir + "/gimbal-mode"
     readonly property string oskStatePath: runtimeDir + "/gimbal-osk"
-    readonly property string posPath: home + "/.local/state/omarchy/gimbal-button.json"
     readonly property string padPath: home + "/.local/state/omarchy/gimbal-pads.json"
     readonly property string userConfigPath: home + "/.config/omarchy/gimbal.json"
 
@@ -81,9 +80,6 @@ Item {
     // where it looked like it was. It also means x and y stay plain bindings
     // -- nothing has to reposition anything by hand after a rotation.
     // -----------------------------------------------------------------------
-    property real fx: 1.0 // 0 = left edge, 1 = right edge
-    property real fy: 0.5 // 0 = top edge, 1 = bottom edge
-
     // The two swipe pads, in the same fractions and for the same reason. They
     // start where your thumbs already are when you hold the machine: the two
     // lower corners. Kept as four plain numbers rather than one object per pad
@@ -166,11 +162,6 @@ Item {
         // startup rather than only on change.
         Component.onCompleted: oskStateFile.setText(root.keyboardShown ? "1" : "0")
     }
-
-    // The floating button and the bar button are the same control in two
-    // places. Having both is redundant once the bar one exists, so this turns
-    // the floating one off without touching tablet mode or the pads.
-    readonly property bool floatingButton: root.opt("floatingButton", true) === true
 
     // -----------------------------------------------------------------------
     // Holding the keyboard back for a game
@@ -330,24 +321,6 @@ Item {
     }
 
     FileView {
-        id: posFile
-
-        path: root.posPath
-        watchChanges: false
-        printErrors: false
-
-        onLoaded: {
-            try {
-                var p = JSON.parse(text());
-                if (typeof p.fx === "number")
-                    root.fx = root.clamp01(p.fx);
-                if (typeof p.fy === "number")
-                    root.fy = root.clamp01(p.fy);
-            } catch (e) {}
-        }
-    }
-
-    FileView {
         id: padFile
 
         path: root.padPath
@@ -470,7 +443,6 @@ Item {
     // The bottom strip is the one you have to find by feel -- when the
     // keyboard is out it is the band between the keys and the window above
     // them -- so it gets twice the depth of the side strips.
-    readonly property int swipeEdgeBottom: root.opt("swipeEdgeBottom", Style.space(32))
 
     // The gutter is the swipe strip that survives the keyboard.
     //
@@ -599,18 +571,6 @@ Item {
     // height and have room to spare.
     readonly property var swipeEdges: [
         {
-            name: "bottom",
-            band: "h",
-            aTop: false,
-            aBottom: true,
-            aLeft: true,
-            aRight: true,
-            up: "up",
-            down: "down",
-            left: "left",
-            right: "right"
-        },
-        {
             name: "left",
             band: "v",
             aTop: true,
@@ -668,13 +628,7 @@ Item {
             // out of the window area entirely. Windows get smaller by exactly
             // the width you set, and everything they still draw is theirs.
             exclusionMode: ExclusionMode.Normal
-            exclusiveZone: strip.modelData.band === "v" ? root.swipeGutter : root.swipeEdgeBottom
-
-            // With the keyboard up the bottom strip would otherwise float in
-            // the band between the window and the keys, reserving twenty-odd
-            // pixels of nothing. The bottom gutter already covers that edge
-            // while the keyboard is out, so there is no call for both.
-            visible: strip.modelData.band !== "h" || !root.keyboardShown
+            exclusiveZone: root.swipeGutter
 
             anchors {
                 top: strip.modelData.aTop
@@ -682,8 +636,7 @@ Item {
                 left: strip.modelData.aLeft
                 right: strip.modelData.aRight
             }
-            implicitWidth: strip.modelData.band === "v" ? root.swipeGutter : 0
-            implicitHeight: strip.modelData.band === "h" ? root.swipeEdgeBottom : 0
+            implicitWidth: root.swipeGutter
 
 
             // Where the finger landed, and how close it is to committing.
@@ -797,26 +750,6 @@ Item {
                 down: "down",
                 left: "left",
                 right: "right"
-            },
-            {
-                // The strip below the keyboard. The bottom edge is where a
-                // thumb goes without looking, and it is the one the keyboard
-                // would otherwise take entirely.
-                //
-                // No downward gesture here and nowhere else to put one: a
-                // downward swipe starting on this strip has the strip's own
-                // height before the finger leaves the display, which is under
-                // the threshold, so it could never complete. The menu stays on
-                // the side edges, which are full height.
-                name: "gutter-bottom",
-                band: "h",
-                aBottom: true,
-                aLeft: true,
-                aRight: true,
-                up: "up",
-                down: "down",
-                left: "left",
-                right: "right"
             }
         ] : []
 
@@ -851,9 +784,9 @@ Item {
             // A side gutter only has to reach as far up as the keyboard ever
             // does; half the screen is comfortably past the 0.45 cap in
             // oskbd's sizing, and above that the ordinary side strips take
-            // over. The bottom one is just the reserved strip itself.
-            implicitWidth: gutter.modelData.band === "v" ? root.swipeGutter : 0
-            implicitHeight: gutter.modelData.band === "v" ? (gutter.screen ? gutter.screen.height * 0.5 : 0) : root.swipeEdgeBottom
+            // over.
+            implicitWidth: root.swipeGutter
+            implicitHeight: gutter.screen ? gutter.screen.height * 0.5 : 0
 
             // Nothing here is visible until the keyboard is, because until then
             // the whole edge already works and a marker would only be clutter.
@@ -863,8 +796,8 @@ Item {
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                width: gutter.modelData.band === "v" ? Math.max(2, root.swipeGutter * 0.14) : parent.width * 0.28
-                height: gutter.modelData.band === "v" ? parent.height * 0.42 : Math.max(2, root.swipeEdgeBottom * 0.14)
+                width: Math.max(2, root.swipeGutter * 0.14)
+                height: parent.height * 0.42
                 radius: Math.min(width, height) / 2
                 color: Util.alpha(Color.popups.text, 0.35)
                 visible: root.keyboardShown
@@ -956,13 +889,6 @@ Item {
         }
     }
 
-    function savePosition() {
-        posFile.setText(JSON.stringify({
-            fx: root.fx,
-            fy: root.fy
-        }));
-    }
-
     function savePads() {
         padFile.setText(JSON.stringify({
             left: {
@@ -974,249 +900,6 @@ Item {
                 fy: root.padRightFy
             }
         }));
-    }
-
-    // -----------------------------------------------------------------------
-    // Window
-    //
-    // A full-screen transparent layer surface whose input region is masked
-    // down to the button alone, so everything else on screen still receives
-    // touches normally. Overlay rather than Top: the moment you most want a
-    // keyboard is inside a fullscreen Moonlight session, and Top sits below
-    // fullscreen windows.
-    // -----------------------------------------------------------------------
-    Variants {
-        model: root.targetScreens
-
-        PanelWindow {
-            id: surface
-
-            required property var modelData
-
-            screen: modelData
-            visible: root.showButton && root.floatingButton
-            anchors {
-                top: true
-                bottom: true
-                left: true
-                right: true
-            }
-            color: "transparent"
-
-            WlrLayershell.namespace: "fw12-osk-button"
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            // Reserve nothing, but respect what others reserve: the window is
-            // then the area left over by the bar and the keyboard, so the
-            // button can be dragged anywhere inside it and still never end up
-            // sitting on top of a key or a bar widget. The drag bounds come
-            // from the window's own size, so they follow for free.
-            exclusionMode: ExclusionMode.Normal
-            exclusiveZone: 0
-
-            mask: Region {
-                item: button
-            }
-
-            // The swipe strips are separate layer surfaces stacked above this
-            // one, so wherever the button overlaps one the strip takes the
-            // touch and that part of the button is dead -- which is exactly
-            // how it ends up feeling stuck once dragged into a corner. Keep
-            // its travel inside the space the strips do not claim.
-            readonly property int insetSide: Math.max(root.swipeEdge, root.swipeGutter) + root.edgeMargin
-            readonly property int insetBottom: root.swipeEdgeBottom + root.edgeMargin
-            readonly property real travelX: Math.max(0, surface.width - root.buttonSize - surface.insetSide * 2)
-            readonly property real travelY: Math.max(0, surface.height - root.buttonSize - root.edgeMargin - surface.insetBottom)
-
-            Item {
-                id: button
-
-                width: root.buttonSize
-                height: root.buttonSize
-
-                // 0..1 toward committing a flick, same as the strips use.
-                property real progress: 0
-
-                x: surface.insetSide + surface.travelX * root.fx
-                y: root.edgeMargin + surface.travelY * root.fy
-
-                // Left dim while idle so it reads as an accessory rather than
-                // something demanding attention, and brought fully up while
-                // the keyboard is out so its state is visible at a glance.
-                opacity: drag.active ? 1.0 : (root.keyboardShown ? 1.0 : 0.72)
-                // Picked up, it lifts. Flicked, it does not move at all, so
-                // the only thing that can report the gesture is the ring below.
-                scale: button.moveMode ? 1.18 : 1.0
-
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: 120
-                        easing.type: Easing.OutCubic
-                    }
-                }
-                Behavior on scale {
-                    NumberAnimation {
-                        duration: 120
-                        easing.type: Easing.OutCubic
-                    }
-                }
-
-                // A ring that grows out of the button as a flick commits.
-                // The button cannot move to report the gesture -- moving is
-                // what holding does -- so this is the only thing that can.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: parent.width * (1 + 0.5 * button.progress)
-                    height: width
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: Math.max(1, Style.space(2))
-                    border.color: button.progress >= 1 ? Color.accent : Util.alpha(Color.popups.text, 0.45)
-                    opacity: (drag.active && !button.moveMode) ? button.progress : 0
-                    visible: opacity > 0
-
-                    Behavior on opacity {
-                        NumberAnimation {
-                            duration: 90
-                        }
-                    }
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    // Round even under the square themes. Everything else the
-                    // shell draws is attached to an edge, and takes its shape
-                    // from the theme to match its neighbours; this floats over
-                    // the middle of whatever you are using with nothing to
-                    // match, and a circle is what reads as "grab me and move
-                    // me" rather than as a window someone lost.
-                    radius: width / 2
-                    color: Util.alpha(Color.popups.background, 0.92)
-                    border.width: Math.max(1, Style.space(2))
-                    border.color: root.keyboardShown ? Color.accent : Util.alpha(Color.popups.border, 0.7)
-
-                    Behavior on border.color {
-                        ColorAnimation {
-                            duration: 120
-                        }
-                    }
-                }
-
-                // The Framework mark, drawn rather than loaded, so it takes
-                // the theme's colour and stays crisp at any size or rotation.
-                // The outer cog and the inner circle are one path; the
-                // odd-even fill rule is what makes the middle a hole.
-                Shape {
-                    anchors.centerIn: parent
-                    width: root.buttonSize * 0.55
-                    height: root.buttonSize * 0.55
-
-                    ShapePath {
-                        fillColor: root.keyboardShown ? Color.accent : Color.popups.text
-                        strokeWidth: 0
-                        strokeColor: "transparent"
-                        fillRule: ShapePath.OddEvenFill
-                        scale: Qt.size(root.buttonSize * 0.55 / 512, root.buttonSize * 0.55 / 512)
-
-                        PathSvg {
-                            path: "m494.6 193.5-37.8-22.4c-17.7-10.5-28.7-30-28.7-51v-45c0-9.2-4.1-17.9-11-23.6-20.6-17.1-43.9-31-69-41-8.4-3.3-17.7-2.7-25.5 1.9L284.7 35a56.05 56.05 0 0 1-57.3 0l-37.9-22.5c-7.7-4.6-17.1-5.3-25.5-1.9-25.2 10-48.3 23.9-68.9 40.9-6.9 5.8-11 14.4-11 23.6V120c0 21-10.9 40.5-28.7 51l-37.8 22.4C9.8 198 4.5 206 3.2 215.1 1 228.4 0 242.1 0 256s1 27.6 3.1 40.9c1.4 9.1 6.7 17.1 14.4 21.7L55.3 341C73.1 351.6 84 371 84 392v44.9c0 9.2 4.1 17.8 11 23.6 20.6 17.1 43.8 31 68.9 40.9 8.4 3.3 17.7 2.7 25.5-1.9l37.9-22.5c17.7-10.5 39.6-10.5 57.3 0l37.9 22.5c7.7 4.6 17.1 5.2 25.5 1.9 25.1-10 48.3-23.9 68.9-40.9 6.9-5.8 11-14.4 11-23.6V392c0-21 11-40.5 28.7-51l37.8-22.4c7.7-4.6 13-12.5 14.4-21.7 2-13.3 3.1-27 3.1-40.9s-1-27.6-3.1-40.9c-1.2-9-6.4-17-14.2-21.6M256.1 414.1c-84.9 0-153.8-70.8-153.8-158 0-87.3 68.9-158 153.8-158s153.8 70.8 153.8 158-68.9 158-153.8 158"
-                        }
-                    }
-                }
-
-                // The handler moves nothing itself; it only reports how far
-                // the finger has gone, and that is turned back into the same
-                // two fractions the position is stored in. So x and y stay
-                // ordinary bindings and a rotation mid-drag cannot desync them.
-                // The button is the one control that is not against an edge,
-                // so a swipe from it has the whole screen in every direction.
-                // That makes it the only place all four gestures are equally
-                // good -- an edge strip can never offer the direction that
-                // points off the display, because the glass runs out.
-                //
-                // Flick it for an action, hold it to pick it up. The hold is
-                // what keeps the two apart: without it, moving the button and
-                // swiping from it are the same motion, and one of them has to
-                // lose. Holding is also the rarer intent -- a button gets
-                // moved once and used daily.
-                property bool moveMode: false
-
-                Timer {
-                    id: holdTimer
-
-                    interval: 350
-                    onTriggered: button.moveMode = true
-                }
-
-                DragHandler {
-                    id: drag
-
-                    target: null
-
-                    property real startFx: 0
-                    property real startFy: 0
-                    property bool fired: false
-
-                    onActiveChanged: {
-                        if (drag.active) {
-                            drag.startFx = root.fx;
-                            drag.startFy = root.fy;
-                            drag.fired = false;
-                        } else {
-                            if (button.moveMode)
-                                root.savePosition();
-                            holdTimer.stop();
-                            button.moveMode = false;
-                            button.progress = 0;
-                        }
-                    }
-
-                    onActiveTranslationChanged: {
-                        if (!drag.active)
-                            return;
-
-                        if (button.moveMode) {
-                            if (surface.travelX > 0)
-                                root.fx = root.clamp01(drag.startFx + drag.activeTranslation.x / surface.travelX);
-                            if (surface.travelY > 0)
-                                root.fy = root.clamp01(drag.startFy + drag.activeTranslation.y / surface.travelY);
-                            return;
-                        }
-
-                        if (drag.fired)
-                            return;
-
-                        var t = drag.activeTranslation;
-                        var horizontal = Math.abs(t.x) > Math.abs(t.y);
-                        var along = horizontal ? t.x : t.y;
-                        // Moving at all means this is a flick and not a hold,
-                        // so the button must not turn into a draggable one
-                        // underneath the gesture.
-                        if (Math.abs(t.x) > 4 || Math.abs(t.y) > 4)
-                            holdTimer.stop();
-                        button.progress = Math.min(1, Math.abs(along) / root.swipeThreshold);
-                        if (Math.abs(along) < root.swipeThreshold)
-                            return;
-                        drag.fired = true;
-                        root.lastSwipeFrom = "button";
-                        root.runAction(horizontal ? (along < 0 ? "left" : "right") : (along < 0 ? "up" : "down"));
-                    }
-                }
-
-                // DragHandler takes an exclusive grab once the finger passes
-                // the drag threshold, which cancels this. So a deliberate move
-                // never also toggles the keyboard.
-                TapHandler {
-                    onPressedChanged: {
-                        if (pressed)
-                            holdTimer.restart();
-                        else
-                            holdTimer.stop();
-                    }
-                    onTapped: root.requestKeyboard(!root.keyboardShown)
-                }
-            }
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -1282,7 +965,7 @@ Item {
             // a pad overlapping one is dead to the touch. Keep the travel
             // inside what the strips do not claim.
             readonly property int insetSide: Math.max(root.swipeEdge, root.swipeGutter) + root.edgeMargin
-            readonly property int insetBottom: root.swipeEdgeBottom + root.edgeMargin
+            readonly property int insetBottom: root.edgeMargin
             readonly property real travelX: Math.max(0, padSurface.width - root.buttonSize - padSurface.insetSide * 2)
             readonly property real travelY: Math.max(0, padSurface.height - root.buttonSize - root.edgeMargin - padSurface.insetBottom)
 
@@ -1341,10 +1024,19 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: width / 2
-                    color: Util.alpha(Color.popups.background, 0.82)
+                    // Filled while the keyboard is out. A control that toggles
+                    // something has to say which way it is set, and the fill
+                    // is readable from the corner of an eye in a way a change
+                    // of outline is not.
+                    color: root.keyboardShown ? Util.alpha(Color.accent, 0.55) : Util.alpha(Color.popups.background, 0.82)
                     border.width: Math.max(1, Style.space(2))
                     border.color: pad.loose ? Color.accent : Util.alpha(Color.popups.border, 0.7)
 
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 120
+                        }
+                    }
                     Behavior on border.color {
                         ColorAnimation {
                             duration: 120
@@ -1375,11 +1067,22 @@ Item {
                 // Three taps inside this window unlock or stick the pad. The
                 // window restarts on every tap, so it is three taps in a row
                 // rather than three within a fixed period.
+                // One tap shows and hides the keyboard, three unlock the pad
+                // for moving. A triple tap opens with a single tap, so the
+                // single-tap action cannot fire the moment the finger lifts --
+                // it waits out the window and then acts on what the run turned
+                // out to be. The delay is the price of putting two things on
+                // one control; 380 ms is short enough to feel like a button
+                // and long enough for three deliberate taps.
                 Timer {
                     id: tapWindow
 
-                    interval: 450
-                    onTriggered: pad.tapRun = 0
+                    interval: 380
+                    onTriggered: {
+                        if (pad.tapRun === 1 && !pad.loose)
+                            root.requestKeyboard(!root.keyboardShown);
+                        pad.tapRun = 0;
+                    }
                 }
 
                 DragHandler {
@@ -1438,11 +1141,12 @@ Item {
                 TapHandler {
                     onTapped: {
                         pad.tapRun += 1;
-                        tapWindow.restart();
-                        if (pad.tapRun < 3)
+                        if (pad.tapRun < 3) {
+                            tapWindow.restart();
                             return;
-                        pad.tapRun = 0;
+                        }
                         tapWindow.stop();
+                        pad.tapRun = 0;
                         pad.loose = !pad.loose;
                         if (!pad.loose)
                             root.savePads();

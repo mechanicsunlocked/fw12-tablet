@@ -77,9 +77,7 @@ Panel {
     // in common; the file between them carries values, not defaults.
     readonly property var fallback: ({
             "mode": "both",
-            "floatingButton": true,
             "swipeGutter": 30,
-            "swipeEdgeBottom": 32,
             "swipeUp": "@keyboard",
             "swipeDown": "omarchy-menu",
             "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'",
@@ -376,10 +374,6 @@ Panel {
                             {
                                 key: "pads",
                                 label: "Pads"
-                            },
-                            {
-                                key: "floatingButton",
-                                label: "Keyboard Button"
                             }
                         ]
 
@@ -389,7 +383,7 @@ Panel {
                             required property var modelData
                             readonly property bool on: root.onOff(box.modelData.key)
 
-                            width: (parent.width - Style.space(6) * 2) / 3
+                            width: (parent.width - Style.space(6)) / 2
                             height: Style.space(34)
                             radius: Style.cornerRadius
                             color: box.on ? root.sage : root.offRed
@@ -424,7 +418,7 @@ Panel {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Green is on. The edges take space out of the window area; the pads and the button take none."
+                    text: "Green is on. The edges take space out of the window area; the pads take none. A pad also shows and hides the keyboard: one tap for that, three to unlock it for moving."
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -440,7 +434,7 @@ Panel {
                         id: gutterLabel
 
                         anchors.left: parent.left
-                        text: "SIDE EDGES"
+                        text: "EDGE WIDTH"
                         foreground: root.foreground
                         fontFamily: root.fontFamily
                     }
@@ -475,58 +469,6 @@ Panel {
                     onReleased: function (v) {
                         root.setValue("swipeGutter", Math.round(v));
                     }
-                }
-
-                // ---------- Bottom edge ----------
-                Item {
-                    width: parent.width
-                    implicitHeight: bottomLabel.implicitHeight
-
-                    PanelSectionHeader {
-                        id: bottomLabel
-
-                        anchors.left: parent.left
-                        text: "BOTTOM EDGE"
-                        foreground: root.foreground
-                        fontFamily: root.fontFamily
-                    }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: bottomLabel.verticalCenter
-                        anchors.verticalCenterOffset: Math.round(bottomLabel.topPadding / 2)
-                        text: Math.round(bottomSlider.liveValue) + " px"
-                        color: root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
-                    }
-                }
-
-                PanelSlider {
-                    id: bottomSlider
-
-                    width: parent.width
-                    height: Style.space(24)
-                    bar: root.bar
-                    enabled: root.onOff("edges")
-                    opacity: enabled ? 1.0 : 0.4
-                    minimum: 0
-                    maximum: 60
-                    step: 2
-                    integer: true
-                    value: Number(root.value("swipeEdgeBottom"))
-                    onReleased: function (v) {
-                        root.setValue("swipeEdgeBottom", Math.round(v));
-                    }
-                }
-
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: "The edges take the space they use out of the window area, so nothing you can see belongs to two things at once. Windows get narrower by exactly this much."
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
                 }
 
                 PanelSeparator {
