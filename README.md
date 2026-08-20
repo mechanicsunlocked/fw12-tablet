@@ -25,38 +25,13 @@ behind each decision.
 
 ## Install
 
-It is a git repo with a `manifest.json` at its root, which is what Omarchy's
-plugin installer expects, so:
-
 ```bash
 omarchy plugin add https://github.com/mechanicsunlocked/gimbal.git --enable --yes
 ~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/install.sh
 ```
 
-The first command clones and enables the plugin. The second builds the
-keyboard, installs the rotation module, adds one `require` line to your
-Hyprland config, and restarts the shell. It needs no root, touches nothing
-outside `$HOME`, and is also how you upgrade — run it again after
-`omarchy plugin update io.github.mechanicsunlocked.gimbal`.
-
-Two commands rather than one because Omarchy's installer deliberately never
-runs code from a plugin it has just cloned, which is the right call. So the
-second one is yours to read first:
-
-```bash
-less ~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/install.sh
-```
-
-Or from an ordinary clone, if you would rather not install it as a plugin at
-all until you have looked at it:
-
-```bash
-git clone https://github.com/mechanicsunlocked/gimbal.git
-./gimbal/install.sh
-```
-
-`install.sh` figures out which of the two it is and does not copy the plugin
-over itself.
+That is the whole of it. No root, nothing outside `$HOME`, and running the same
+two lines again is also how you upgrade.
 
 ### The one part that needs root
 
@@ -79,12 +54,6 @@ omarchy plugin remove io.github.mechanicsunlocked.gimbal
 The boot fix is left in place; `uninstall.sh` prints the commands to take that
 out too, rather than doing it, because it is a generic module-ordering fix that
 is harmless on its own.
-
-### Requirements
-
-`gtk4`, `gtk4-layer-shell`, `libxkbcommon`, `wayland`, `pkgconf`, `gcc` — all
-in the official repos, nothing from the AUR. `install.sh` checks for them
-before it builds anything and prints the one `pacman` line that fixes it.
 
 ---
 
@@ -329,6 +298,39 @@ Because it uploads the real keymap rather than inventing one, AltGr and dead
 keys work on it exactly as they do on the built-in keyboard — `AltGr` then `'`
 then `e` gives `é`. Hold `Fn` for F1–F12 on the number row. Tap a modifier once
 for one-shot, twice to lock it.
+
+---
+
+## About the install
+
+Two commands rather than one because Omarchy's installer deliberately never
+runs code from a plugin it has just cloned, which is the right call. So the
+second one is yours to read first:
+
+```bash
+less ~/.config/omarchy/plugins/io.github.mechanicsunlocked.gimbal/install.sh
+```
+
+Or from an ordinary clone, if you would rather not install it as a plugin at
+all until you have looked at it. `install.sh` works out which of the two it is
+and does not copy the plugin over itself:
+
+```bash
+git clone https://github.com/mechanicsunlocked/gimbal.git
+./gimbal/install.sh
+```
+
+It builds the keyboard, installs the rotation module, adds one `require` line
+to your Hyprland config, and restarts the shell.
+
+Gimbal is an ordinary Omarchy shell plugin — a git repo with a `manifest.json`
+at its root — so everything `omarchy plugin` knows how to do applies to it.
+`omarchy plugin --help` lists the rest, including `update` and `remove`.
+
+**Requirements:** `gtk4`, `gtk4-layer-shell`, `libxkbcommon`, `wayland`,
+`pkgconf`, `gcc` — all in the official Arch repos, nothing from the AUR.
+`install.sh` checks for them before it builds anything and prints the one
+`pacman` line that fixes it.
 
 ---
 
