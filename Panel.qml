@@ -106,20 +106,23 @@ Item {
         }
     }
 
-    // One window per pad per screen. Variants takes a flat model, so the two
-    // lists are crossed here rather than nested.
+    // One window per enabled knob per screen. Variants takes a flat model, so
+    // the two lists are crossed here rather than nested, and a knob that is
+    // switched off simply never gets a surface.
     readonly property var padSurfaces: {
         var out = [];
         var ss = root.targetScreens;
         for (var i = 0; i < ss.length; i++) {
-            out.push({
-                screen: ss[i],
-                pad: "left"
-            });
-            out.push({
-                screen: ss[i],
-                pad: "right"
-            });
+            if (root.padLeftOn)
+                out.push({
+                    screen: ss[i],
+                    pad: "left"
+                });
+            if (root.padRightOn)
+                out.push({
+                    screen: ss[i],
+                    pad: "right"
+                });
         }
         return out;
     }
@@ -283,9 +286,9 @@ Item {
         id: keyboard
 
         // Positional: layout, variant, options, and the gutter to keep clear.
-        // Nothing, now that the bottom strip reserves its own space: the
-        // compositor already seats the keyboard above whatever is reserved,
-        // and a margin on top of that would count the strip twice.
+        // Nothing to keep clear any more: with the edge strips gone the
+        // keyboard has the full width of the screen, which is worth the most
+        // in portrait where the key pitch is tightest.
         command: ["fw12-oskbd", root.kbLayout || "us", root.kbVariant, "", "0"]
         running: false
 
@@ -357,14 +360,14 @@ Item {
     //   { "id": "io.github.mechanicsunlocked.gimbal",
     //     "swipeUp":    "@keyboard",
     //     "swipeDown":  "omarchy-menu",
-    //     "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
-    //     "swipeLeft":  "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'",
-    //     "swipeEdge":  16,
-    //     "swipeThreshold": 60 }
+    //     "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'",
+    //     "swipeLeft":  "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r+1\" })'",
+    //     "padLeft":    true,
+    //     "padRight":   true,
+    //     "swipeThreshold": 30 }
     //
-    // Swipes are named for the direction your finger travels, starting at the
-    // matching edge. "@keyboard" is the one built-in action; anything else is
-    // run as a command.
+    // Swipes are named for the direction your finger travels. "@keyboard" is
+    // the one built-in action; anything else is run as a command.
     // -----------------------------------------------------------------------
     property var settings: ({})
 
@@ -408,8 +411,6 @@ Item {
     // which combination you want is a question with an "all off" answer that
     // a three-way choice cannot express. `mode` stays readable as a fallback
     // so a config written before this still means what it meant.
-    readonly property bool edgesOn: root.opt("edges", root.mode !== "pads") === true
-
     readonly property string swipeUp: root.opt("swipeUp", "@keyboard")
     readonly property string swipeDown: root.opt("swipeDown", "omarchy-menu")
     // `hyprctl dispatch` takes a *Lua expression* on Omarchy 4, not the
@@ -439,27 +440,18 @@ Item {
     // rather than wrapping.
     readonly property string swipeRight: root.opt("swipeRight", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'")
     readonly property string swipeLeft: root.opt("swipeLeft", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r+1\" })'")
-    readonly property int swipeEdge: root.opt("swipeEdge", Style.space(16))
-    // The bottom strip is the one you have to find by feel -- when the
-    // keyboard is out it is the band between the keys and the window above
-    // them -- so it gets twice the depth of the side strips.
-
-    // The gutter is the swipe strip that survives the keyboard.
-    //
-    // The ordinary side strips respect what other surfaces reserve, so the
-    // moment the keyboard claims the bottom of the screen they stop at the top
-    // of it -- and the whole lower half of the display has nowhere to start a
-    // gesture from. The gutters ignore reservations and run the full height
-    // instead, and the keyboard is told to keep this much clear on each side
-    // (argv[4]) so a gutter is never sitting on top of a key.
-    readonly property int swipeGutter: Math.max(0, root.opt("swipeGutter", Style.space(30)))
-    // Short on purpose. A strip is 16 px, so the finger is off it almost at
-    // once and the rest of the travel is unguided; asking for 60 px made the
-    // gesture feel like a drag rather than a flick.
+    // How far the finger travels before a swipe counts. A knob sits away from
+    // every edge, so all four directions have the whole screen and one number
+    // covers them; an edge strip needed the threshold scaled to whatever room
+    // was left in that direction, which is most of what made it feel
+    // unreliable. Short on purpose: 60 px felt like a drag rather than a flick.
     readonly property int swipeThreshold: root.opt("swipeThreshold", Style.space(30))
 
-    // The two swipe pads. Set from the bar widget's Interaction setting.
-    readonly property bool showPads: root.opt("pads", root.mode !== "edges") === true
+    // Each knob is its own switch, so you can run one thumb or two. `pads`,
+    // and `mode` before that, are still read as the fallback for both.
+    readonly property bool padsOn: root.opt("pads", root.mode !== "edges") === true
+    readonly property bool padLeftOn: root.opt("padLeft", root.padsOn) === true
+    readonly property bool padRightOn: root.opt("padRight", root.padsOn) === true
 
     FileView {
         id: settingsFile
@@ -499,393 +491,6 @@ Item {
         onExited: function (exitCode) {
             if (exitCode !== 0)
                 console.warn("gimbal: swipe command exited " + exitCode + ": " + actionProc.command.join(" "));
-        }
-    }
-
-    // How far a finger can actually travel before it leaves the display.
-    //
-    // A strip anchored to an edge is a dead end in that direction: swipe left
-    // on the left edge and the glass runs out. The room is *not* the strip's
-    // width -- it is the distance from where the finger landed to the screen
-    // edge, which on a 30 px strip averages 15 px and can be nearly nothing.
-    //
-    // Measuring it as the full width was the first attempt and it made every
-    // outward swipe impossible: the log showed 19 inward gestures firing and
-    // not one outward, because an 18 px threshold cannot be met from an
-    // average of 15 px of travel. Since each strip is anchored to the edge it
-    // is limited by, the press position within the surface *is* that distance.
-    //
-    // The threshold is most of whatever room there is, floored so a brush
-    // cannot trigger anything -- which also means a finger landing right on
-    // the edge correctly gets no gesture, because there is nowhere to go.
-    // Directions with the whole screen to play with keep the full threshold.
-    function swipeThresholdFor(m, horizontal, along, press, w, h) {
-        var room = Infinity;
-        if (horizontal) {
-            if (along < 0 && m.aLeft)
-                room = press.x;
-            else if (along > 0 && m.aRight)
-                room = w - press.x;
-        } else if (along > 0 && m.aBottom) {
-            room = h - press.y;
-        }
-        if (room === Infinity)
-            return root.swipeThreshold;
-        return Math.max(8, Math.min(root.swipeThreshold, room * 0.6));
-    }
-
-    // Which surface the last gesture came from. Only for the log, but the
-    // log is how the last two swipe reports were settled, and "it fired" and
-    // "it fired *there*" are different facts.
-    property string lastSwipeFrom: ""
-
-    function runAction(key) {
-        var cmd = String(root.actionFor(key) || "");
-        if (cmd === "")
-            return;
-        if (cmd === "@keyboard") {
-            root.requestKeyboard(!root.keyboardShown);
-            return;
-        }
-        console.log("gimbal: swipe " + key + " on " + root.lastSwipeFrom + " -> " + cmd);
-        actionProc.running = false;
-        actionProc.command = ["sh", "-c", cmd];
-        actionProc.running = true;
-    }
-
-    // Edge strips. Each is its own small layer surface rather than a masked
-    // region of one big one, so that `exclusionMode: Normal` can do the hard
-    // part: the compositor places each strip in the area left over by other
-    // exclusive zones, which means the bottom strip sits above the keyboard
-    // when it is out, and the top strip below the bar -- never on top of
-    // either, and with no geometry duplicated here to keep in step.
-    // Three strips. The bar owns the real top edge -- a swipe that starts at
-    // the top of the screen starts on the bar and the bar gets it -- so there
-    // is no top strip, and each remaining strip carries whatever directions it
-    // has room for.
-    //
-    // The menu lives on a downward swipe at either side edge rather than at
-    // the bottom: a downward swipe that starts on the bottom strip has 16 px
-    // of screen left before the finger runs off the display, which is less
-    // than the threshold, so it could never complete. The side strips are full
-    // height and have room to spare.
-    readonly property var swipeEdges: [
-        {
-            name: "left",
-            band: "v",
-            aTop: true,
-            aBottom: true,
-            aLeft: true,
-            aRight: false,
-            up: "up",
-            down: "down",
-            left: "left",
-            right: "right"
-        },
-        {
-            name: "right",
-            band: "v",
-            aTop: true,
-            aBottom: true,
-            aLeft: false,
-            aRight: true,
-            up: "up",
-            down: "down",
-            left: "left",
-            right: "right"
-        }
-    ]
-
-    Variants {
-        model: root.showButton && root.edgesOn && root.targetScreens.length > 0 ? root.swipeEdges : []
-
-        PanelWindow {
-            id: strip
-
-            required property var modelData
-            property bool fired: false
-            // 0..1, how far this gesture has got toward committing. It drives
-            // the only feedback a swipe has: without it there is no telling a
-            // gesture that fell short of the threshold from one that was never
-            // seen at all, and that is most of what makes an edge gesture feel
-            // unreliable.
-            property real progress: 0
-            property point pressAt: Qt.point(0, 0)
-
-            screen: root.targetScreens[0]
-            color: "transparent"
-
-            WlrLayershell.namespace: "fw12-swipe-" + modelData.name
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            // The strips reserve the space they occupy rather than floating
-            // over it. An edge that both catches swipes and sits on top of a
-            // window is an edge that eats the window's close button and its
-            // scrollbar, and Wayland gives a client no way out of that: the
-            // surface under the finger at touch-down gets the touch, and it
-            // cannot look at it, decide it was meant for something else, and
-            // hand it back. So the honest arrangement is to take the strip
-            // out of the window area entirely. Windows get smaller by exactly
-            // the width you set, and everything they still draw is theirs.
-            exclusionMode: ExclusionMode.Normal
-            exclusiveZone: root.swipeGutter
-
-            anchors {
-                top: strip.modelData.aTop
-                bottom: strip.modelData.aBottom
-                left: strip.modelData.aLeft
-                right: strip.modelData.aRight
-            }
-            implicitWidth: root.swipeGutter
-
-
-            // Where the finger landed, and how close it is to committing.
-            //
-            // A swipe is the one gesture with no natural feedback: a button
-            // lights up under a thumb, a swipe just either happens or does
-            // not, and when it does not there is nothing to say whether it
-            // was too short, in the wrong place, or never seen. This is that
-            // missing half -- it appears under the finger the moment a strip
-            // takes the touch, so the live area teaches itself, and it fills
-            // as the threshold is approached so a gesture that fell short
-            // looks different from one that was ignored.
-            Rectangle {
-                id: pip
-
-                readonly property real span: Math.min(strip.width, strip.height)
-
-                x: strip.pressAt.x - width / 2
-                y: strip.pressAt.y - height / 2
-                width: pip.span * (0.55 + 0.45 * strip.progress)
-                height: width
-                radius: width / 2
-
-                color: strip.progress >= 1 ? Color.accent : Util.alpha(Color.popups.text, 0.5)
-                opacity: swipe.active ? (0.35 + 0.65 * strip.progress) : 0
-                visible: opacity > 0
-
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: 130
-                        easing.type: Easing.OutCubic
-                    }
-                }
-                Behavior on width {
-                    NumberAnimation {
-                        duration: 60
-                    }
-                }
-                Behavior on color {
-                    ColorAnimation {
-                        duration: 80
-                    }
-                }
-            }
-            DragHandler {
-                id: swipe
-
-                target: null
-
-                onActiveChanged: {
-                    if (swipe.active) {
-                        strip.fired = false;
-                        strip.pressAt = swipe.centroid.pressPosition;
-                    }
-                    strip.progress = 0;
-                }
-
-                onActiveTranslationChanged: {
-                    if (!swipe.active || strip.fired)
-                        return;
-                    var t = swipe.activeTranslation;
-                    // Whichever axis the finger committed to decides which of
-                    // the strip's four directions this is.
-                    var horizontal = Math.abs(t.x) > Math.abs(t.y);
-                    var along = horizontal ? t.x : t.y;
-                    var need = root.swipeThresholdFor(strip.modelData, horizontal, along, swipe.centroid.pressPosition, strip.width, strip.height);
-                    strip.progress = Math.min(1, Math.abs(along) / need);
-                    if (Math.abs(along) < need)
-                        return;
-                    var key = horizontal ? (along < 0 ? strip.modelData.left : strip.modelData.right) : (along < 0 ? strip.modelData.up : strip.modelData.down);
-                    if (key === "")
-                        return;
-                    strip.fired = true;
-                    root.lastSwipeFrom = strip.modelData.name;
-                    root.runAction(key);
-                }
-            }
-        }
-    }
-
-    // Two full-height gutters, one per side, carrying the same four gestures
-    // as the side strips.
-    //
-    // ExclusionMode.Ignore is the whole point: these are the surfaces that do
-    // not step aside for the keyboard, so a swipe works in the same place
-    // whether it is up or not. They only need to reach as far up as the
-    // keyboard ever does -- half the screen is comfortably past the 0.45 cap in
-    // oskbd's sizing -- and above that the ordinary side strips take over.
-    // Where the two overlap they do the same thing, so it does not matter
-    // which one gets the finger.
-    Variants {
-        model: root.showButton && root.edgesOn && root.swipeGutter > 0 && root.targetScreens.length > 0 ? [
-            {
-                name: "gutter-left",
-                band: "v",
-                aBottom: true,
-                aLeft: true,
-                aRight: false,
-                up: "up",
-                down: "down",
-                left: "left",
-                right: "right"
-            },
-            {
-                name: "gutter-right",
-                band: "v",
-                aBottom: true,
-                aLeft: false,
-                aRight: true,
-                up: "up",
-                down: "down",
-                left: "left",
-                right: "right"
-            }
-        ] : []
-
-        PanelWindow {
-            id: gutter
-
-            required property var modelData
-            property bool fired: false
-            // 0..1, how far this gesture has got toward committing. It drives
-            // the only feedback a swipe has: without it there is no telling a
-            // gesture that fell short of the threshold from one that was never
-            // seen at all, and that is most of what makes an edge gesture feel
-            // unreliable.
-            property real progress: 0
-            property point pressAt: Qt.point(0, 0)
-
-            screen: root.targetScreens[0]
-            color: "transparent"
-
-            WlrLayershell.namespace: "fw12-swipe-" + modelData.name
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            exclusionMode: ExclusionMode.Ignore
-            exclusiveZone: 0
-
-            anchors {
-                top: false
-                bottom: true
-                left: gutter.modelData.aLeft
-                right: gutter.modelData.aRight
-            }
-            // A side gutter only has to reach as far up as the keyboard ever
-            // does; half the screen is comfortably past the 0.45 cap in
-            // oskbd's sizing, and above that the ordinary side strips take
-            // over.
-            implicitWidth: root.swipeGutter
-            implicitHeight: gutter.screen ? gutter.screen.height * 0.5 : 0
-
-            // Nothing here is visible until the keyboard is, because until then
-            // the whole edge already works and a marker would only be clutter.
-            // Once the keyboard is up the live area is no longer where anyone
-            // would guess, so it says where it is: a thin bar down the middle
-            // of the gutter, dim enough to ignore and present enough to find.
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(2, root.swipeGutter * 0.14)
-                height: parent.height * 0.42
-                radius: Math.min(width, height) / 2
-                color: Util.alpha(Color.popups.text, 0.35)
-                visible: root.keyboardShown
-
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: 150
-                    }
-                }
-            }
-
-
-            // Where the finger landed, and how close it is to committing.
-            //
-            // A swipe is the one gesture with no natural feedback: a button
-            // lights up under a thumb, a swipe just either happens or does
-            // not, and when it does not there is nothing to say whether it
-            // was too short, in the wrong place, or never seen. This is that
-            // missing half -- it appears under the finger the moment a strip
-            // takes the touch, so the live area teaches itself, and it fills
-            // as the threshold is approached so a gesture that fell short
-            // looks different from one that was ignored.
-            Rectangle {
-                id: pip
-
-                readonly property real span: Math.min(gutter.width, gutter.height)
-
-                x: gutter.pressAt.x - width / 2
-                y: gutter.pressAt.y - height / 2
-                width: pip.span * (0.55 + 0.45 * gutter.progress)
-                height: width
-                radius: width / 2
-
-                color: gutter.progress >= 1 ? Color.accent : Util.alpha(Color.popups.text, 0.5)
-                opacity: gutterSwipe.active ? (0.35 + 0.65 * gutter.progress) : 0
-                visible: opacity > 0
-
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: 130
-                        easing.type: Easing.OutCubic
-                    }
-                }
-                Behavior on width {
-                    NumberAnimation {
-                        duration: 60
-                    }
-                }
-                Behavior on color {
-                    ColorAnimation {
-                        duration: 80
-                    }
-                }
-            }
-            DragHandler {
-                id: gutterSwipe
-
-                target: null
-
-                onActiveChanged: {
-                    if (gutterSwipe.active) {
-                        gutter.fired = false;
-                        gutter.pressAt = gutterSwipe.centroid.pressPosition;
-                    }
-                    gutter.progress = 0;
-                }
-
-                onActiveTranslationChanged: {
-                    if (!gutterSwipe.active || gutter.fired)
-                        return;
-                    var t = gutterSwipe.activeTranslation;
-                    var horizontal = Math.abs(t.x) > Math.abs(t.y);
-                    var along = horizontal ? t.x : t.y;
-                    var need = root.swipeThresholdFor(gutter.modelData, horizontal, along, gutterSwipe.centroid.pressPosition, gutter.width, gutter.height);
-                    gutter.progress = Math.min(1, Math.abs(along) / need);
-                    if (Math.abs(along) < need)
-                        return;
-                    // Upward is the keyboard, on both gutters, so the gesture
-                    // that summons it is also the one that dismisses it, from
-                    // the same place.
-                    var key = horizontal ? (along < 0 ? gutter.modelData.left : gutter.modelData.right) : (along < 0 ? gutter.modelData.up : gutter.modelData.down);
-                    if (key === "")
-                        return;
-                    gutter.fired = true;
-                    root.lastSwipeFrom = gutter.modelData.name;
-                    root.runAction(key);
-                }
-            }
         }
     }
 
@@ -934,7 +539,7 @@ Item {
             readonly property string padId: modelData.pad
 
             screen: modelData.screen
-            visible: root.showButton && root.showPads
+            visible: root.showButton
             anchors {
                 top: true
                 bottom: true
@@ -964,7 +569,7 @@ Item {
             // The swipe strips are stacked above this surface, so any part of
             // a pad overlapping one is dead to the touch. Keep the travel
             // inside what the strips do not claim.
-            readonly property int insetSide: Math.max(root.swipeEdge, root.swipeGutter) + root.edgeMargin
+            readonly property int insetSide: root.edgeMargin
             readonly property int insetBottom: root.edgeMargin
             readonly property real travelX: Math.max(0, padSurface.width - root.buttonSize - padSurface.insetSide * 2)
             readonly property real travelY: Math.max(0, padSurface.height - root.buttonSize - root.edgeMargin - padSurface.insetBottom)

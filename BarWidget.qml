@@ -36,18 +36,16 @@ Panel {
     readonly property color sage: "#9CAF88"
     readonly property color offRed: "#C2554D"
 
-    // edges and pads are stored as their own switches. A config written before
-    // they were split says "mode" instead, so that is still understood.
+    // Each knob is its own switch. Configs written before they were split say
+    // "pads", and before that "mode", so both are still understood.
     function onOff(key) {
-        var v = root.conf ? root.conf[key] : undefined;
+        var c = root.conf || ({});
+        var v = c[key];
         if (v !== undefined && v !== null)
             return v === true;
-        var m = String((root.conf && root.conf["mode"]) || "both");
-        if (key === "edges")
-            return m !== "pads";
-        if (key === "pads")
-            return m !== "edges";
-        return true;
+        if (c["pads"] !== undefined && c["pads"] !== null)
+            return c["pads"] === true;
+        return String(c["mode"] || "both") !== "edges";
     }
 
     readonly property string home: Quickshell.env("HOME") || ""
@@ -77,7 +75,6 @@ Panel {
     // in common; the file between them carries values, not defaults.
     readonly property var fallback: ({
             "mode": "both",
-            "swipeGutter": 30,
             "swipeUp": "@keyboard",
             "swipeDown": "omarchy-menu",
             "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'",
@@ -359,21 +356,20 @@ Panel {
                     width: parent.width
                     spacing: Style.space(6)
 
-                    // Three boxes, each its own switch, because they are not
-                    // alternatives: you can want the pads without the edges,
-                    // or nothing at all. Colour carries the state rather than
-                    // a tick or a shade of grey -- at arm's length on a tablet
+                    // One box per knob, each its own switch: one thumb or
+                    // two, or neither. Colour carries the state rather than a
+                    // tick or a shade of grey -- at arm's length on a tablet
                     // that is the difference you can read without looking
-                    // twice, and it is the same answer for all three.
+                    // twice.
                     Repeater {
                         model: [
                             {
-                                key: "edges",
-                                label: "Edge"
+                                key: "padLeft",
+                                label: "Left knob"
                             },
                             {
-                                key: "pads",
-                                label: "Pads"
+                                key: "padRight",
+                                label: "Right knob"
                             }
                         ]
 
@@ -418,57 +414,10 @@ Panel {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Green is on. The edges take space out of the window area; the pads take none. A pad also shows and hides the keyboard: one tap for that, three to unlock it for moving."
+                    text: "One tap shows and hides the keyboard, three taps unlock a knob for moving, and a press-and-drag fires the four gestures below."
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
-                }
-
-                // ---------- Gutter width ----------
-                Item {
-                    width: parent.width
-                    implicitHeight: gutterLabel.implicitHeight
-                    opacity: root.value("mode") === "pads" ? 0.4 : 1.0
-
-                    PanelSectionHeader {
-                        id: gutterLabel
-
-                        anchors.left: parent.left
-                        text: "EDGE WIDTH"
-                        foreground: root.foreground
-                        fontFamily: root.fontFamily
-                    }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: gutterLabel.verticalCenter
-                        anchors.verticalCenterOffset: Math.round(gutterLabel.topPadding / 2)
-                        text: Math.round(gutterSlider.liveValue) + " px"
-                        color: root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
-                    }
-                }
-
-                PanelSlider {
-                    id: gutterSlider
-
-                    width: parent.width
-                    height: Style.space(24)
-                    bar: root.bar
-                    enabled: root.onOff("edges")
-                    opacity: enabled ? 1.0 : 0.4
-                    minimum: 0
-                    maximum: 60
-                    step: 2
-                    integer: true
-                    value: Number(root.value("swipeGutter"))
-                    // Written on release rather than on every sample: the
-                    // strips rebuild on each change, and rebuilding a layer
-                    // surface sixty times across one drag is visible.
-                    onReleased: function (v) {
-                        root.setValue("swipeGutter", Math.round(v));
-                    }
                 }
 
                 PanelSeparator {
