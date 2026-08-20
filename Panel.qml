@@ -426,8 +426,13 @@ Item {
     // stopping dead at 1. "-1" is the only one of the four that can do
     // nothing at all, and a swipe that does nothing reads as a broken gesture
     // -- there is no feedback to tell you that you are simply at the end.
-    readonly property string swipeRight: root.opt("swipeRight", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'")
-    readonly property string swipeLeft: root.opt("swipeLeft", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'")
+    // r-1 and r+1 rather than e-1 and +1: the "e" selectors walk to the next
+    // workspace that has a window on it, so swiping back from 5 lands on 2 if
+    // 3 and 4 happen to be empty. A swipe should move one workspace, and the
+    // "r" selectors are the ones that count in plain numbers. They stop at 1
+    // rather than wrapping.
+    readonly property string swipeRight: root.opt("swipeRight", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'")
+    readonly property string swipeLeft: root.opt("swipeLeft", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r+1\" })'")
     readonly property int swipeEdge: root.opt("swipeEdge", Style.space(16))
     // The bottom strip is the one you have to find by feel -- when the
     // keyboard is out it is the band between the keys and the window above

@@ -59,8 +59,8 @@ Panel {
             "swipeGutter": 30,
             "swipeUp": "@keyboard",
             "swipeDown": "omarchy-menu",
-            "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
-            "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'",
+            "swipeRight": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r-1\" })'",
+            "swipeLeft": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"r+1\" })'",
             "blockOnMoonlight": true
         })
 
