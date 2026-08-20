@@ -120,7 +120,7 @@ Panel {
 
         anchors.fill: parent
         bar: root.bar
-        text: ""
+        text: "\uf10a"
         tooltipText: "Gimbal"
         onPressed: function (b) {
             root.toggle();
