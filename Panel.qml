@@ -430,7 +430,12 @@ Item {
 
     // Which of the two mechanisms is live: "edges", "pads" or "both".
     readonly property string mode: String(root.opt("mode", "both"))
-    readonly property bool edgesOn: root.mode !== "pads"
+    // Three independent switches rather than one three-way mode: edges, pads
+    // and the floating button are not alternatives to each other, and asking
+    // which combination you want is a question with an "all off" answer that
+    // a three-way choice cannot express. `mode` stays readable as a fallback
+    // so a config written before this still means what it meant.
+    readonly property bool edgesOn: root.opt("edges", root.mode !== "pads") === true
 
     readonly property string swipeUp: root.opt("swipeUp", "@keyboard")
     readonly property string swipeDown: root.opt("swipeDown", "omarchy-menu")
@@ -482,7 +487,7 @@ Item {
     readonly property int swipeThreshold: root.opt("swipeThreshold", Style.space(30))
 
     // The two swipe pads. Set from the bar widget's Interaction setting.
-    readonly property bool showPads: root.mode !== "edges"
+    readonly property bool showPads: root.opt("pads", root.mode !== "edges") === true
 
     FileView {
         id: settingsFile

@@ -29,6 +29,27 @@ Panel {
     readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
     readonly property color dim: Qt.darker(foreground, 1.55)
 
+    // The Laptop 12's own sage, and a red far enough from it to be told apart
+    // at a glance on a screen you are holding at arm's length. Fixed rather
+    // than themed: on and off have to stay legible whatever the wallpaper is
+    // doing, and these two are the machine's own colours.
+    readonly property color sage: "#9CAF88"
+    readonly property color offRed: "#C2554D"
+
+    // edges and pads are stored as their own switches. A config written before
+    // they were split says "mode" instead, so that is still understood.
+    function onOff(key) {
+        var v = root.conf ? root.conf[key] : undefined;
+        if (v !== undefined && v !== null)
+            return v === true;
+        var m = String((root.conf && root.conf["mode"]) || "both");
+        if (key === "edges")
+            return m !== "pads";
+        if (key === "pads")
+            return m !== "edges";
+        return true;
+    }
+
     readonly property string home: Quickshell.env("HOME") || ""
     readonly property string configPath: home + "/.config/omarchy/gimbal.json"
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
@@ -317,7 +338,7 @@ Panel {
 
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.folded ? "Tablet" : "Laptop"
+                        text: "Framework 12 tablet mode settings"
                         color: root.folded ? Color.accent : root.dim
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
@@ -336,75 +357,74 @@ Panel {
                     fontFamily: root.fontFamily
                 }
 
-                ButtonGroup {
+                Row {
                     width: parent.width
                     spacing: Style.space(6)
-                    foreground: root.foreground
-                    background: root.bar ? root.bar.background : Color.background
-                    fontFamily: root.fontFamily
-                    options: [
-                        {
-                            value: "edges",
-                            label: "Edges",
-                            tooltip: "Screen-edge strips only"
-                        },
-                        {
-                            value: "pads",
-                            label: "Pads",
-                            tooltip: "The two thumb pads only"
-                        },
-                        {
-                            value: "both",
-                            label: "Both",
-                            tooltip: "Edge strips and thumb pads"
+
+                    // Three boxes, each its own switch, because they are not
+                    // alternatives: you can want the pads without the edges,
+                    // or nothing at all. Colour carries the state rather than
+                    // a tick or a shade of grey -- at arm's length on a tablet
+                    // that is the difference you can read without looking
+                    // twice, and it is the same answer for all three.
+                    Repeater {
+                        model: [
+                            {
+                                key: "edges",
+                                label: "Edge"
+                            },
+                            {
+                                key: "pads",
+                                label: "Pads"
+                            },
+                            {
+                                key: "floatingButton",
+                                label: "Keyboard Button"
+                            }
+                        ]
+
+                        Rectangle {
+                            id: box
+
+                            required property var modelData
+                            readonly property bool on: root.onOff(box.modelData.key)
+
+                            width: (parent.width - Style.space(6) * 2) / 3
+                            height: Style.space(34)
+                            radius: Style.cornerRadius
+                            color: box.on ? root.sage : root.offRed
+                            opacity: tap.pressed ? 0.75 : 1.0
+
+                            Behavior on color {
+                                ColorAnimation {
+                                    duration: 120
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width - Style.space(8)
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                                text: box.modelData.label
+                                color: "#1B1B1B"
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                            }
+
+                            TapHandler {
+                                id: tap
+
+                                onTapped: root.setValue(box.modelData.key, !box.on)
+                            }
                         }
-                    ]
-                    value: String(root.value("mode"))
-                    onChanged: function (v) {
-                        root.setValue("mode", v);
                     }
                 }
 
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Pads reserve nothing, so turning the edges off gives the keyboard its full width back."
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                }
-
-                // ---------- Floating keyboard button ----------
-                Item {
-                    width: parent.width
-                    implicitHeight: floatingLabel.implicitHeight
-
-                    Text {
-                        id: floatingLabel
-
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Floating keyboard button"
-                        color: root.foreground
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
-                    }
-
-                    ToggleSwitch {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: floatingLabel.verticalCenter
-                        trackHeight: Math.round(floatingLabel.font.pixelSize * 1.2)
-                        cursorPad: Style.space(3)
-                        foreground: root.foreground
-                        checked: root.value("floatingButton") === true
-                        onToggled: root.setValue("floatingButton", !(root.value("floatingButton") === true))
-                    }
-                }
-
-                Text {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: "The draggable button on screen. The keyboard icon in the bar does the same job, so this can go."
+                    text: "Green is on. The edges take space out of the window area; the pads and the button take none."
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -442,7 +462,7 @@ Panel {
                     width: parent.width
                     height: Style.space(24)
                     bar: root.bar
-                    enabled: root.value("mode") !== "pads"
+                    enabled: root.onOff("edges")
                     opacity: enabled ? 1.0 : 0.4
                     minimum: 0
                     maximum: 60
@@ -488,7 +508,7 @@ Panel {
                     width: parent.width
                     height: Style.space(24)
                     bar: root.bar
-                    enabled: root.value("mode") !== "pads"
+                    enabled: root.onOff("edges")
                     opacity: enabled ? 1.0 : 0.4
                     minimum: 0
                     maximum: 60
