@@ -50,6 +50,7 @@ Item {
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string home: Quickshell.env("HOME") || ""
     readonly property string modePath: runtimeDir + "/gimbal-mode"
+    readonly property string oskStatePath: runtimeDir + "/gimbal-osk"
     readonly property string posPath: home + "/.local/state/omarchy/gimbal-button.json"
     readonly property string padPath: home + "/.local/state/omarchy/gimbal-pads.json"
     readonly property string userConfigPath: home + "/.config/omarchy/gimbal.json"
@@ -146,6 +147,29 @@ Item {
     // it again.
     // -----------------------------------------------------------------------
     readonly property bool keyboardShown: keyboard.running
+
+    // Whether the keyboard is out is also written to a one-byte file, because
+    // the bar widget lives in a different plugin instance and a file it can
+    // watch is a smaller thing to depend on than the shell's private map of
+    // loaded panels. One writer, one reader, no polling.
+    onKeyboardShownChanged: oskStateFile.setText(root.keyboardShown ? "1" : "0")
+
+    FileView {
+        id: oskStateFile
+
+        path: root.oskStatePath
+        printErrors: false
+
+        // A stale "1" from a session that ended with the keyboard out would
+        // light the bar button up over nothing, so state is stated once at
+        // startup rather than only on change.
+        Component.onCompleted: oskStateFile.setText(root.keyboardShown ? "1" : "0")
+    }
+
+    // The floating button and the bar button are the same control in two
+    // places. Having both is redundant once the bar one exists, so this turns
+    // the floating one off without touching tablet mode or the pads.
+    readonly property bool floatingButton: root.opt("floatingButton", true) === true
 
     // -----------------------------------------------------------------------
     // Holding the keyboard back for a game
@@ -917,7 +941,7 @@ Item {
             required property var modelData
 
             screen: modelData
-            visible: root.showButton
+            visible: root.showButton && root.floatingButton
             anchors {
                 top: true
                 bottom: true

@@ -32,6 +32,18 @@ Panel {
     readonly property string configPath: home + "/.config/omarchy/gimbal.json"
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string modePath: runtimeDir + "/gimbal-mode"
+    readonly property string oskStatePath: runtimeDir + "/gimbal-osk"
+
+    // The bar host sizes a slot around whatever the widget asks for, so two
+    // buttons need a stated width; a single one could get away with filling
+    // the default slot.
+    readonly property bool vertical: bar ? bar.vertical : false
+    readonly property int barSize: bar ? bar.barSize : Style.bar.sizeHorizontal
+
+    implicitWidth: root.vertical ? root.barSize : buttons.implicitWidth
+    implicitHeight: root.vertical ? buttons.implicitHeight : root.barSize
+
+    property bool keyboardShown: false
 
     property string tabletState: ""
     readonly property bool folded: tabletState !== "laptop"
@@ -43,6 +55,7 @@ Panel {
     // in common; the file between them carries values, not defaults.
     readonly property var fallback: ({
             "mode": "both",
+            "floatingButton": true,
             "swipeGutter": 30,
             "swipeUp": "@keyboard",
             "swipeDown": "omarchy-menu",
@@ -115,16 +128,67 @@ Panel {
         onLoadFailed: root.tabletState = ""
     }
 
-    BarIconButton {
-        id: button
+    // Panel.qml owns the keyboard and writes a byte here when it comes and
+    // goes. Watching a file rather than reaching into the shell's map of
+    // loaded panels keeps the dependency between the two halves down to one
+    // path, and the button lights up the moment the keyboard does however it
+    // was summoned -- bar, swipe or SUPER+B.
+    FileView {
+        id: oskStateFile
 
-        anchors.fill: parent
-        bar: root.bar
-        text: "\uf10a"
-        tooltipText: "Gimbal"
-        onPressed: function (b) {
-            root.toggle();
+        path: root.oskStatePath
+        watchChanges: true
+        printErrors: false
+
+        onFileChanged: reload()
+        onLoaded: root.keyboardShown = text().trim() === "1"
+        onLoadFailed: root.keyboardShown = false
+    }
+
+    // Keyboard on the left, settings on the right, in that order because the
+    // keyboard is the one you reach for and the settings are the one you set
+    // once. A Grid rather than a Row so a vertical bar stacks them without a
+    // second layout to keep in step.
+    Grid {
+        id: buttons
+
+        anchors.centerIn: parent
+        rows: root.vertical ? 2 : 1
+        columns: root.vertical ? 1 : 2
+
+        BarIconButton {
+            id: keyboardButton
+
+            bar: root.bar
+            text: "\uf11c"
+            tooltipText: root.keyboardShown ? "Hide the keyboard" : "Show the keyboard"
+            active: root.keyboardShown
+            onPressed: function (b) {
+                root.toggleKeyboard();
+            }
         }
+
+        BarIconButton {
+            id: button
+
+            bar: root.bar
+            text: "\uf10a"
+            tooltipText: "Gimbal"
+            active: root.opened
+            onPressed: function (b) {
+                root.toggle();
+            }
+        }
+    }
+
+    // Panel.qml exposes toggle() for the SUPER+K keybind; the shell will call
+    // it in-process for us, so tapping the bar costs no subprocess and takes
+    // the same path a keybind does.
+    function toggleKeyboard() {
+        var shell = root.bar ? root.bar.shell : null;
+        if (!shell || typeof shell.callIfLoaded !== "function")
+            return;
+        shell.callIfLoaded(root.moduleName, "toggle", "");
     }
 
     KeyboardPanel {
@@ -228,6 +292,42 @@ Panel {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     text: "Pads reserve nothing, so turning the edges off gives the keyboard its full width back."
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                }
+
+                // ---------- Floating keyboard button ----------
+                Item {
+                    width: parent.width
+                    implicitHeight: floatingLabel.implicitHeight
+
+                    Text {
+                        id: floatingLabel
+
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Floating keyboard button"
+                        color: root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                    }
+
+                    ToggleSwitch {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: floatingLabel.verticalCenter
+                        trackHeight: Math.round(floatingLabel.font.pixelSize * 1.2)
+                        cursorPad: Style.space(3)
+                        foreground: root.foreground
+                        checked: root.value("floatingButton") === true
+                        onToggled: root.setValue("floatingButton", !(root.value("floatingButton") === true))
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "The draggable button on screen. The keyboard icon in the bar does the same job, so this can go."
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
