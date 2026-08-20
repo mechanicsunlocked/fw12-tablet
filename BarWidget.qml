@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Shapes
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -173,11 +174,86 @@ Panel {
             id: button
 
             bar: root.bar
-            text: "\uf10a"
             tooltipText: "Gimbal"
             active: root.opened
             onPressed: function (b) {
                 root.toggle();
+            }
+
+            // A gimbal, drawn rather than borrowed: three rings on three axes,
+            // which is the thing the plugin is named after and the thing it
+            // does. No Nerd Font glyph is a gimbal, and a tablet outline said
+            // less than this does. Drawn as arcs so it scales with the bar and
+            // takes the bar's own colour, including when the panel is open.
+            iconComponent: Component {
+                Item {
+                    id: gimbal
+
+                    readonly property real r: Math.min(width, height) * 0.42
+                    readonly property real cx: width / 2
+                    readonly property real cy: height / 2
+                    readonly property color ink: button.active && button.useActiveColor ? button.activeColor : button.foreground
+
+                    Shape {
+                        anchors.fill: parent
+                        preferredRendererType: Shape.CurveRenderer
+
+                        ShapePath {
+                            strokeColor: gimbal.ink
+                            strokeWidth: Math.max(1, gimbal.r * 0.17)
+                            fillColor: "transparent"
+
+                            PathAngleArc {
+                                centerX: gimbal.cx
+                                centerY: gimbal.cy
+                                radiusX: gimbal.r
+                                radiusY: gimbal.r
+                                startAngle: 0
+                                sweepAngle: 360
+                            }
+                        }
+
+                        ShapePath {
+                            strokeColor: gimbal.ink
+                            strokeWidth: Math.max(1, gimbal.r * 0.15)
+                            fillColor: "transparent"
+
+                            PathAngleArc {
+                                centerX: gimbal.cx
+                                centerY: gimbal.cy
+                                radiusX: gimbal.r * 0.44
+                                radiusY: gimbal.r * 0.92
+                                startAngle: 0
+                                sweepAngle: 360
+                            }
+                        }
+
+                        ShapePath {
+                            strokeColor: gimbal.ink
+                            strokeWidth: Math.max(1, gimbal.r * 0.15)
+                            fillColor: "transparent"
+
+                            PathAngleArc {
+                                centerX: gimbal.cx
+                                centerY: gimbal.cy
+                                radiusX: gimbal.r * 0.92
+                                radiusY: gimbal.r * 0.44
+                                startAngle: 0
+                                sweepAngle: 360
+                            }
+                        }
+                    }
+
+                    // The load at the centre -- the part all three rings are
+                    // there to keep level.
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: gimbal.r * 0.34
+                        height: width
+                        radius: width / 2
+                        color: gimbal.ink
+                    }
+                }
             }
         }
     }
