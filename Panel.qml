@@ -292,7 +292,10 @@ Item {
         id: keyboard
 
         // Positional: layout, variant, options, and the gutter to keep clear.
-        command: ["fw12-oskbd", root.kbLayout || "us", root.kbVariant, "", String(root.swipeGutter)]
+        // Nothing, now that the bottom strip reserves its own space: the
+        // compositor already seats the keyboard above whatever is reserved,
+        // and a margin on top of that would count the strip twice.
+        command: ["fw12-oskbd", root.kbLayout || "us", root.kbVariant, "", "0"]
         running: false
 
         onExited: function (exitCode) {
@@ -650,8 +653,23 @@ Item {
             WlrLayershell.namespace: "fw12-swipe-" + modelData.name
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            // The strips reserve the space they occupy rather than floating
+            // over it. An edge that both catches swipes and sits on top of a
+            // window is an edge that eats the window's close button and its
+            // scrollbar, and Wayland gives a client no way out of that: the
+            // surface under the finger at touch-down gets the touch, and it
+            // cannot look at it, decide it was meant for something else, and
+            // hand it back. So the honest arrangement is to take the strip
+            // out of the window area entirely. Windows get smaller by exactly
+            // the width you set, and everything they still draw is theirs.
             exclusionMode: ExclusionMode.Normal
-            exclusiveZone: 0
+            exclusiveZone: strip.modelData.band === "v" ? root.swipeGutter : root.swipeEdgeBottom
+
+            // With the keyboard up the bottom strip would otherwise float in
+            // the band between the window and the keys, reserving twenty-odd
+            // pixels of nothing. The bottom gutter already covers that edge
+            // while the keyboard is out, so there is no call for both.
+            visible: strip.modelData.band !== "h" || !root.keyboardShown
 
             anchors {
                 top: strip.modelData.aTop
@@ -830,7 +848,7 @@ Item {
             // oskbd's sizing, and above that the ordinary side strips take
             // over. The bottom one is just the reserved strip itself.
             implicitWidth: gutter.modelData.band === "v" ? root.swipeGutter : 0
-            implicitHeight: gutter.modelData.band === "v" ? (gutter.screen ? gutter.screen.height * 0.5 : 0) : root.swipeGutter
+            implicitHeight: gutter.modelData.band === "v" ? (gutter.screen ? gutter.screen.height * 0.5 : 0) : root.swipeEdgeBottom
 
             // Nothing here is visible until the keyboard is, because until then
             // the whole edge already works and a marker would only be clutter.
@@ -841,7 +859,7 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 width: gutter.modelData.band === "v" ? Math.max(2, root.swipeGutter * 0.14) : parent.width * 0.28
-                height: gutter.modelData.band === "v" ? parent.height * 0.42 : Math.max(2, root.swipeGutter * 0.14)
+                height: gutter.modelData.band === "v" ? parent.height * 0.42 : Math.max(2, root.swipeEdgeBottom * 0.14)
                 radius: Math.min(width, height) / 2
                 color: Util.alpha(Color.popups.text, 0.35)
                 visible: root.keyboardShown
