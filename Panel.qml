@@ -21,6 +21,7 @@
 import QtQuick
 import QtQuick.Shapes
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
@@ -189,18 +190,40 @@ Item {
     // -----------------------------------------------------------------------
     readonly property bool blockOnMoonlight: root.opt("blockOnMoonlight", true) === true
 
-    readonly property bool moonlightUp: {
-        var m = ToplevelManager.toplevels;
+    function looksLikeMoonlight(t) {
+        if (!t)
+            return false;
+        var w = t.wayland;
+        if (String((w && w.appId) || "").toLowerCase().indexOf("moonlight") >= 0)
+            return true;
+        var o = t.lastIpcObject;
+        return String((o && o.class) || "").toLowerCase().indexOf("moonlight") >= 0;
+    }
+
+    // Blocked only on the workspace the game is actually on. A stream running
+    // on workspace 2 is no reason to lose the keyboard on workspace 1, and
+    // switching away from the game is the ordinary way to go and do something
+    // else on the tablet. Which workspace a window is on is a Hyprland
+    // question rather than a Wayland one -- the foreign-toplevel protocol has
+    // no notion of workspaces -- so it is asked of Hyprland directly.
+    readonly property bool moonlightFocused: {
+        var fw = Hyprland.focusedWorkspace;
+        if (!fw)
+            return false;
+        var m = Hyprland.toplevels;
         var vs = m ? m.values : [];
         for (var i = 0; i < vs.length; i++) {
-            var id = String(vs[i].appId || "").toLowerCase();
-            if (id.indexOf("moonlight") >= 0)
+            var t = vs[i];
+            if (!root.looksLikeMoonlight(t))
+                continue;
+            var ws = t.workspace;
+            if (ws && ws.id === fw.id)
                 return true;
         }
         return false;
     }
 
-    readonly property bool keyboardBlocked: root.blockOnMoonlight && root.moonlightUp
+    readonly property bool keyboardBlocked: root.blockOnMoonlight && root.moonlightFocused
 
     // A game that starts while the keyboard is out takes the screen back.
     onKeyboardBlockedChanged: {
@@ -220,6 +243,8 @@ Item {
     // not always what you want.
     function toggle(arg) {
         var want = !root.keyboardShown;
+        if (want && root.keyboardBlocked)
+            return "blocked";
         root.requestKeyboard(want);
         return want ? "shown" : "hidden";
     }
