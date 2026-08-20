@@ -52,6 +52,7 @@ Item {
     readonly property string modePath: runtimeDir + "/gimbal-mode"
     readonly property string posPath: home + "/.local/state/omarchy/gimbal-button.json"
     readonly property string padPath: home + "/.local/state/omarchy/gimbal-pads.json"
+    readonly property string userConfigPath: home + "/.config/omarchy/gimbal.json"
 
     property string tabletState: ""
     readonly property bool folded: tabletState !== "laptop"
@@ -146,7 +147,46 @@ Item {
     // -----------------------------------------------------------------------
     readonly property bool keyboardShown: keyboard.running
 
+    // -----------------------------------------------------------------------
+    // Holding the keyboard back for a game
+    //
+    // Streaming a desktop game to the tablet, every gesture you make is aimed
+    // at the remote machine, and a keyboard sliding up over the picture is
+    // never what you meant. So while a Moonlight window is open, nothing
+    // summons the keyboard: not a swipe, not the button, not SUPER+B. The
+    // gestures themselves keep working, because switching workspace away from
+    // the game is exactly what you still want.
+    //
+    // Detected from the Wayland toplevel list rather than by polling for a
+    // process: the list is already live in this process and changes arrive as
+    // a signal, so there is no interval to pick and nothing to be stale by.
+    // It also asks the right question -- a Moonlight window on screen is what
+    // matters, not a Moonlight binary that happens to be resident.
+    // -----------------------------------------------------------------------
+    readonly property bool blockOnMoonlight: root.opt("blockOnMoonlight", true) === true
+
+    readonly property bool moonlightUp: {
+        var m = ToplevelManager.toplevels;
+        var vs = m ? m.values : [];
+        for (var i = 0; i < vs.length; i++) {
+            var id = String(vs[i].appId || "").toLowerCase();
+            if (id.indexOf("moonlight") >= 0)
+                return true;
+        }
+        return false;
+    }
+
+    readonly property bool keyboardBlocked: root.blockOnMoonlight && root.moonlightUp
+
+    // A game that starts while the keyboard is out takes the screen back.
+    onKeyboardBlockedChanged: {
+        if (root.keyboardBlocked)
+            keyboard.running = false;
+    }
+
     function requestKeyboard(on) {
+        if (on && root.keyboardBlocked)
+            return;
         keyboard.running = on;
     }
 
@@ -303,8 +343,45 @@ Item {
     // -----------------------------------------------------------------------
     property var settings: ({})
 
-    readonly property string swipeUp: settings.swipeUp !== undefined ? settings.swipeUp : "@keyboard"
-    readonly property string swipeDown: settings.swipeDown !== undefined ? settings.swipeDown : "omarchy-menu"
+    // What the bar widget writes. It is a separate file rather than an edit to
+    // shell.json because shell.json belongs to Omarchy, and a plugin that
+    // rewrites another program's config file will eventually lose a race with
+    // it. Values here win over the shell.json entry, which stays usable for
+    // anyone who would rather set things by hand.
+    property var userSettings: ({})
+
+    function opt(name, fallback) {
+        var v = root.userSettings ? root.userSettings[name] : undefined;
+        if (v !== undefined && v !== null)
+            return v;
+        v = root.settings ? root.settings[name] : undefined;
+        if (v !== undefined && v !== null)
+            return v;
+        return fallback;
+    }
+
+    FileView {
+        id: userConfigFile
+
+        path: root.userConfigPath
+        watchChanges: true
+        printErrors: false
+
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                root.userSettings = JSON.parse(text()) || ({});
+            } catch (e) {}
+        }
+        onLoadFailed: root.userSettings = ({})
+    }
+
+    // Which of the two mechanisms is live: "edges", "pads" or "both".
+    readonly property string mode: String(root.opt("mode", "both"))
+    readonly property bool edgesOn: root.mode !== "pads"
+
+    readonly property string swipeUp: root.opt("swipeUp", "@keyboard")
+    readonly property string swipeDown: root.opt("swipeDown", "omarchy-menu")
     // `hyprctl dispatch` takes a *Lua expression* on Omarchy 4, not the
     // hyprland-1 words: `hyprctl dispatch workspace e+1` fails with a Lua
     // syntax error and does nothing. This is the form Omarchy's own workspace
@@ -325,13 +402,13 @@ Item {
     // stopping dead at 1. "-1" is the only one of the four that can do
     // nothing at all, and a swipe that does nothing reads as a broken gesture
     // -- there is no feedback to tell you that you are simply at the end.
-    readonly property string swipeRight: settings.swipeRight !== undefined ? settings.swipeRight : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'"
-    readonly property string swipeLeft: settings.swipeLeft !== undefined ? settings.swipeLeft : "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'"
-    readonly property int swipeEdge: settings.swipeEdge !== undefined ? settings.swipeEdge : Style.space(16)
+    readonly property string swipeRight: root.opt("swipeRight", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'")
+    readonly property string swipeLeft: root.opt("swipeLeft", "hyprctl dispatch 'hl.dsp.focus({ workspace = \"+1\" })'")
+    readonly property int swipeEdge: root.opt("swipeEdge", Style.space(16))
     // The bottom strip is the one you have to find by feel -- when the
     // keyboard is out it is the band between the keys and the window above
     // them -- so it gets twice the depth of the side strips.
-    readonly property int swipeEdgeBottom: settings.swipeEdgeBottom !== undefined ? settings.swipeEdgeBottom : Style.space(32)
+    readonly property int swipeEdgeBottom: root.opt("swipeEdgeBottom", Style.space(32))
 
     // The gutter is the swipe strip that survives the keyboard.
     //
@@ -341,14 +418,14 @@ Item {
     // gesture from. The gutters ignore reservations and run the full height
     // instead, and the keyboard is told to keep this much clear on each side
     // (argv[4]) so a gutter is never sitting on top of a key.
-    readonly property int swipeGutter: settings.swipeGutter !== undefined ? settings.swipeGutter : Style.space(30)
+    readonly property int swipeGutter: Math.max(0, root.opt("swipeGutter", Style.space(30)))
     // Short on purpose. A strip is 16 px, so the finger is off it almost at
     // once and the rest of the travel is unguided; asking for 60 px made the
     // gesture feel like a drag rather than a flick.
-    readonly property int swipeThreshold: settings.swipeThreshold !== undefined ? settings.swipeThreshold : Style.space(30)
+    readonly property int swipeThreshold: root.opt("swipeThreshold", Style.space(30))
 
-    // The two swipe pads. Set "pads": false to go back to the edges alone.
-    readonly property bool showPads: settings.pads !== undefined ? settings.pads : true
+    // The two swipe pads. Set from the bar widget's Interaction setting.
+    readonly property bool showPads: root.mode !== "edges"
 
     FileView {
         id: settingsFile
@@ -498,7 +575,7 @@ Item {
     ]
 
     Variants {
-        model: root.showButton && root.targetScreens.length > 0 ? root.swipeEdges : []
+        model: root.showButton && root.edgesOn && root.targetScreens.length > 0 ? root.swipeEdges : []
 
         PanelWindow {
             id: strip
@@ -621,7 +698,7 @@ Item {
     // Where the two overlap they do the same thing, so it does not matter
     // which one gets the finger.
     Variants {
-        model: root.showButton && root.targetScreens.length > 0 ? [
+        model: root.showButton && root.edgesOn && root.swipeGutter > 0 && root.targetScreens.length > 0 ? [
             {
                 name: "gutter-left",
                 band: "v",
