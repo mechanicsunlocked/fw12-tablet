@@ -126,6 +126,33 @@ The hold is what keeps moving and flicking apart. Without it they are the same
 motion and one of them has to lose; holding is also the rarer intent, since a
 button gets moved once and used daily.
 
+### The two swipe pads
+
+While folded, two round pads appear at the lower corners, marked with four
+arrowheads. **Press one and drag** in any of the four directions for the same
+four actions. That is all there is to using them.
+
+They start at the lower corners because that is where your thumbs already are
+when you hold the machine, so they cost no reach. And because a pad is not
+against an edge, all four directions have the whole screen to travel and the
+same threshold applies to each — which is the one thing an edge strip can never
+offer, since at the left edge there is nothing to the left of your finger.
+
+**To move a pad, tap it three times.** It swells and turns the accent colour to
+say it is loose; then drag it anywhere. **Three taps again** sticks it down and
+saves it. The position is kept as a fraction of the screen, so it survives
+rotation, and is remembered across reboots in
+`~/.local/state/omarchy/gimbal-pads.json`.
+
+Three taps rather than a hold, because a hold is what a swipe starts with. If
+picking a pad up were a long press, then pressing, pausing to think, and
+swiping would pick it up mid-gesture. Three taps is not something a hand does
+by accident, which is exactly why the press-and-drag can start acting
+immediately with nothing to arbitrate.
+
+If you would rather have the edges alone, set `"pads": false` on this plugin's
+entry in `~/.config/omarchy/shell.json`.
+
 ### Everything else on the edges
 
 While folded, every screen edge is live, and **each one takes all four
